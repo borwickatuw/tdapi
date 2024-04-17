@@ -1,6 +1,5 @@
 import copy
 import time
-import urlparse
 
 import iso8601
 

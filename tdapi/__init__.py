@@ -2,7 +2,7 @@
 TeamDynamix API.
 """
 import json
-import urlparse
+import urllib.parse
 import logging
 import time
 
@@ -98,7 +98,7 @@ class TDConnection(object):
         """
         This uses urljoin to create the absolute URL.
         """
-        return urlparse.urljoin(self.url_root, url_stem)
+        return urllib.parse.urljoin(self.url_root, url_stem)
 
     def add_authorization_header(self, headers):
         headers['Authorization'] = 'Bearer {}'.format(self.bearer_token)
