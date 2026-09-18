@@ -749,8 +749,16 @@ class TDConnection:
     def login(self):
         """
         This posts the login data.
+
+        Goes through `raw_request` rather than `request`: `request`
+        responds to a 401 by logging in and retrying, which for the
+        login call itself is unbounded mutual recursion. A 401 here
+        means the credentials are wrong, and no retry will fix that.
+
+        Raises:
+            TDAuthorizationException: if the credentials are rejected.
         """
-        resp = self.request(
+        resp = self.raw_request(
             method="post",
             url_stem="auth/loginadmin",
             data={
@@ -821,7 +829,16 @@ class TDUserConnection(TDConnection):
         self.login()
 
     def login(self):
-        resp = self.request(
+        """
+        Post the user login data.
+
+        Uses `raw_request` for the same reason the admin login does:
+        retrying a rejected login by logging in again never terminates.
+
+        Raises:
+            TDAuthorizationException: if the credentials are rejected.
+        """
+        resp = self.raw_request(
             method="post",
             url_stem="auth/login",
             data={

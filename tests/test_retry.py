@@ -171,3 +171,28 @@ class TestRateLimiter:
         started = time.monotonic()
         limiter.wait()
         assert time.monotonic() - started < 0.05
+
+
+class TestLoginDoesNotRecurse:
+    """A rejected login must raise, not retry itself forever."""
+
+    def test_bad_credentials_raise_immediately(self, requests_mock):
+        route = requests_mock.post(API_ROOT + "auth/loginadmin", status_code=401, text="nope")
+        with pytest.raises(tdapi.TDAuthorizationException):
+            tdapi.TDConnection(
+                BEID="wrong", WebServicesKey="wrong", url_root=API_ROOT, request_delay=0
+            )
+        assert route.call_count == 1
+
+    def test_an_expired_token_mid_run_still_re_logins_once(self, conn, requests_mock):
+        # The retry that login must not do is still the right thing for
+        # every other call.
+        route = requests_mock.get(
+            API_ROOT + "thing",
+            [
+                {"status_code": 401, "text": "expired"},
+                {"status_code": 200, "json": {"ok": True}},
+            ],
+        )
+        assert conn.json_request(method="get", url_stem="thing") == {"ok": True}
+        assert route.call_count == 2
