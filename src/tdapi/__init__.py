@@ -38,6 +38,11 @@ DEFAULT_MAX_RETRY_WAIT = 300.0
 
 RETRYABLE_STATUS_CODES = frozenset({429, 500, 502, 503, 504})
 
+# Streaming chunk size for content_request(). 64 KiB is large enough
+# that syscall overhead is noise and small enough that a big attachment
+# never sits in memory.
+DEFAULT_CHUNK_SIZE = 64 * 1024
+
 # requests raises these for a connection reset, DNS failure or a read
 # that exceeded `timeout` -- all worth one more try.
 RETRYABLE_EXCEPTIONS = (
@@ -137,6 +142,43 @@ def resolve_url_root(url_root, preview=False, sandbox=False):
         return normalized
 
     return normalized + (SANDBOX_APP_PATH if sandbox else PRODUCTION_APP_PATH)
+
+
+def filename_from_content_disposition(value):
+    """
+    Pull the filename out of a Content-Disposition header.
+
+    Handles both `filename="x.pdf"` and RFC 5987's `filename*=UTF-8''x.pdf`,
+    preferring the latter when both are present because it is the one
+    that can carry non-ASCII names.
+
+    Returns:
+        The decoded filename, or None when the header is absent or
+        carries no filename. None means "the server did not tell us",
+        and the caller should fall back to the attachment metadata.
+    """
+    if not value:
+        return None
+
+    encoded = None
+    plain = None
+    for part in value.split(';'):
+        part = part.strip()
+        if part.lower().startswith('filename*='):
+            encoded = part.split('=', 1)[1].strip()
+        elif part.lower().startswith('filename='):
+            plain = part.split('=', 1)[1].strip().strip('"')
+
+    if encoded:
+        # charset'language'percent-encoded-value
+        pieces = encoded.split("'", 2)
+        if len(pieces) == 3:
+            charset, _language, raw = pieces
+            return urllib.parse.unquote(raw, encoding=charset or 'utf-8',
+                                        errors='replace')
+        return urllib.parse.unquote(encoded)
+
+    return plain or None
 
 
 def parse_retry_after(value, now=None):
@@ -425,39 +467,40 @@ class TDConnection(object):
             return DEFAULT_MAX_RETRY_WAIT
         return server_wait
 
-    def raw_request(self, method, url_stem,
-                    data=None,
-                    bearer_required=True):
+    def send(self, method, url_stem,
+             data=None,
+             bearer_required=True,
+             stream=False,
+             content_type='application/json'):
         """
-        This method sends a request to TeamDynamix.
+        Send one logical request, pacing and retrying as configured.
 
-        `data` will be converted to JSON.
+        This is the shared core of `raw_request()` (which reads a JSON
+        body) and `raw_content_request()` (which streams a binary one),
+        so there is exactly one retry loop in this client.
 
-        The `bearer_required` option is only set to false for logging
-        in.
-
-        Retries 429s, 5xxs and connection errors up to `max_attempts`
-        times, honouring Retry-After when the tenant sends it and
-        backing off exponentially with jitter when it does not. A 429
-        pauses the shared rate limiter, so every thread on this
-        connection slows down rather than only the one that was
-        throttled.
+        Retries 429, 5xx and connection errors up to `max_attempts`,
+        honouring Retry-After when the tenant sends it and backing off
+        exponentially with jitter when it does not. A 429 pauses the
+        shared rate limiter, so every thread on this connection slows
+        down rather than only the one that was throttled.
 
         Returns:
-            The `requests.Response`, which has already passed
-            `handle_resp()`.
+            The `requests.Response`, *not* yet passed through
+            `handle_resp()` -- the caller decides when to raise,
+            because a streaming caller must do so before touching the
+            body.
 
         Raises:
-            TDAuthorizationException: on a 401.
-            TDException: on any other non-200/201 response, including
-                one that was still failing after the last attempt, and
-                on a connection error that outlived the retry budget.
+            TDException: if the method is unsupported, or if a
+                connection error outlived the retry budget.
         """
         if method not in ALLOWED_METHODS:
             raise TDException("method {} not supported".format(method))
 
         headers = {}
-        headers['Content-Type'] = 'application/json'
+        if content_type is not None:
+            headers['Content-Type'] = content_type
 
         if bearer_required:
             self.add_authorization_header(headers)
@@ -482,6 +525,7 @@ class TDConnection(object):
                                             data=payload,
                                             headers=headers,
                                             timeout=self.timeout,
+                                            stream=stream,
                 )
             except RETRYABLE_EXCEPTIONS as exc:
                 self.rate_limiter.record()
@@ -520,7 +564,39 @@ class TDConnection(object):
             if resp.status_code == 429:
                 # Slow every thread on this connection, not just this one.
                 self.rate_limiter.pause(wait)
+            # A retried streaming response still holds its connection;
+            # give it back before asking for another.
+            if stream:
+                resp.close()
             time.sleep(wait)
+
+        return resp
+
+    def raw_request(self, method, url_stem,
+                    data=None,
+                    bearer_required=True):
+        """
+        This method sends a request to TeamDynamix and returns the
+        response, whose body is read into memory.
+
+        `data` will be converted to JSON.
+
+        The `bearer_required` option is only set to false for logging
+        in.
+
+        Returns:
+            The `requests.Response`, which has already passed
+            `handle_resp()`.
+
+        Raises:
+            TDAuthorizationException: on a 401.
+            TDException: on any other non-200/201 response, including
+                one still failing after the last retry.
+        """
+        resp = self.send(method=method,
+                         url_stem=url_stem,
+                         data=data,
+                         bearer_required=bearer_required)
 
         logger.debug('Response code: %s\nResponse: %s',
                       resp.status_code,
@@ -529,6 +605,63 @@ class TDConnection(object):
         self.handle_resp(resp)
 
         return resp
+
+    def raw_content_request(self, url_stem, fileobj,
+                            method='get',
+                            chunk_size=DEFAULT_CHUNK_SIZE):
+        """
+        Stream a non-JSON response body into `fileobj`.
+
+        This is the path for `GET attachments/{id}/content`, whose body
+        is an arbitrary binary file: `json_request` would try to parse
+        it, and `raw_request` would hold the whole thing in memory and
+        log it. Here the body is never materialized -- it is copied
+        chunk by chunk into the caller's file handle.
+
+        `fileobj` must be opened in binary mode. Nothing is written to
+        it unless the response is one `handle_resp()` accepts, so a 404
+        or an expired token leaves the caller's file untouched.
+
+        Returns:
+            A dict of what the transfer saw: `bytes` written,
+            `content_type`, `content_length` (the declared value, which
+            may be None), and `filename` parsed out of any
+            Content-Disposition header. The caller checksums the bytes
+            it wrote; this client does not.
+
+        Raises:
+            TDAuthorizationException: on a 401.
+            TDException: on any other non-200/201 response.
+        """
+        resp = self.send(method=method,
+                         url_stem=url_stem,
+                         bearer_required=True,
+                         stream=True,
+                         content_type=None)
+
+        # Raise before a single byte reaches the caller's file: an error
+        # body is HTML or JSON, and writing it would produce a
+        # plausible-looking attachment full of an error message.
+        try:
+            self.handle_resp(resp)
+
+            written = 0
+            for chunk in resp.iter_content(chunk_size=chunk_size):
+                if not chunk:
+                    continue
+                fileobj.write(chunk)
+                written += len(chunk)
+        finally:
+            resp.close()
+
+        declared = resp.headers.get('Content-Length')
+        return {
+            'bytes': written,
+            'content_type': resp.headers.get('Content-Type'),
+            'content_length': int(declared) if declared is not None else None,
+            'filename': filename_from_content_disposition(
+                resp.headers.get('Content-Disposition')),
+        }
 
     def request(self, *args, **kwargs):
         """
@@ -540,6 +673,21 @@ class TDConnection(object):
         except TDAuthorizationException:
             self.login()
             return self.raw_request(*args, **kwargs)
+
+    def content_request(self, *args, **kwargs):
+        """
+        Calls raw_content_request. If TDAuthorizationException is
+        raised, tries to login and do it again.
+
+        The retry is safe because `raw_content_request` raises before it
+        writes anything, so the caller's file handle is untouched by the
+        failed attempt.
+        """
+        try:
+            return self.raw_content_request(*args, **kwargs)
+        except TDAuthorizationException:
+            self.login()
+            return self.raw_content_request(*args, **kwargs)
 
     def json_request(self, *args, **kwargs):
         """
