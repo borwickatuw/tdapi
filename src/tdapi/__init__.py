@@ -23,6 +23,10 @@ logger = logging.getLogger(__name__)
 TD_CONNECTION = None
 
 
+DEFAULT_TIMEOUT = 60
+
+ALLOWED_METHODS = ('post', 'get', 'delete', 'put', 'patch')
+
 PRODUCTION_APP_PATH = 'TDWebApi/api/'
 SANDBOX_APP_PATH = 'SBTDWebApi/api/'
 
@@ -192,7 +196,8 @@ class TDConnection(object):
                  preview=False,
                  url_root=None,
                  request_delay=1,
-                 cache_expire_after=None):
+                 cache_expire_after=None,
+                 timeout=DEFAULT_TIMEOUT):
         """
         TODO this only uses the new superuser login option with BEID and
         WebServicesKey.
@@ -202,12 +207,18 @@ class TDConnection(object):
 
         `cache_expire_after` opts this connection into response
         caching; see `make_session()`.
+
+        `timeout` is passed to every request, in seconds. Without one a
+        stalled connection hangs the caller forever, which for a
+        long-running batch job means a run that never finishes and
+        never fails.
         """
         self.bearer_token = False            # This will be set in login()
         self.BEID = BEID
         self.WebServicesKey = WebServicesKey
         self.session = make_session(cache_expire_after)
         self.request_delay = request_delay
+        self.timeout = timeout
 
         self._make_url_root(url_root=url_root,
                             preview=preview,
@@ -247,7 +258,8 @@ class TDConnection(object):
         self.add_authorization_header(headers)
         resp = self.session.post(self._make_url(url_stem),
                                  files=files,
-                                 headers=headers)
+                                 headers=headers,
+                                 timeout=self.timeout)
         self.handle_resp(resp)
         return resp
 
@@ -256,18 +268,18 @@ class TDConnection(object):
                     data=None,
                     bearer_required=True):
         """
-        This method POSTs to TeamDynamix.
+        This method sends a request to TeamDynamix.
 
         `data` will be converted to JSON.
 
         The `bearer_required` option is only set to false for logging
         in.
         """
+        if method not in ALLOWED_METHODS:
+            raise TDException("method {} not supported".format(method))
+
         headers = {}
         headers['Content-Type'] = 'application/json'
-
-        if method not in ('post', 'get', 'delete', 'put', 'patch'):
-            raise TDException("method {} not supported".format(method))
 
         if bearer_required:
             self.add_authorization_header(headers)
@@ -277,46 +289,15 @@ class TDConnection(object):
         else:
             payload = ''
 
-        if method == 'post':
-            logger.debug('POST to %s, data %s',
-                          self._make_url(url_stem),
-                          payload)
-            resp = self.session.post(self._make_url(url_stem),
-                                     data=payload,
-                                     headers=headers,
-            )
-        elif method == 'get':
-            logger.debug('GET to %s, data %s',
-                          self._make_url(url_stem),
-                          payload)
-            resp = self.session.get(self._make_url(url_stem),
+        url = self._make_url(url_stem)
+        logger.debug('%s to %s, data %s', method.upper(), url, payload)
+
+        resp = self.session.request(method=method,
+                                    url=url,
                                     data=payload,
                                     headers=headers,
-                                 )
-        elif method == 'delete':
-            logger.debug('DELETE to %s, data %s',
-                          self._make_url(url_stem),
-                          payload)
-            resp = self.session.delete(self._make_url(url_stem),
-                                       data=payload,
-                                       headers=headers,
-                                   )
-        elif method == 'put':
-            logger.debug('PUT to %s, data %s',
-                          self._make_url(url_stem),
-                          payload)
-            resp = self.session.put(self._make_url(url_stem),
-                                       data=payload,
-                                       headers=headers,
-                                   )
-        elif method == 'patch':
-            logger.debug('PATCH to %s, data %s',
-                          self._make_url(url_stem),
-                          payload)
-            resp = self.session.patch(self._make_url(url_stem),
-                                      data=payload,
-                                      headers=headers,
-            )
+                                    timeout=self.timeout,
+        )
 
         logger.debug('Response code: %s\nResponse: %s',
                       resp.status_code,
@@ -396,12 +377,14 @@ class TDUserConnection(TDConnection):
                  preview=False,
                  url_root=None,
                  request_delay=1,
-                 cache_expire_after=None):
+                 cache_expire_after=None,
+                 timeout=DEFAULT_TIMEOUT):
         self.bearer_token = False
         self.username = username
         self.password = password
         self.session = make_session(cache_expire_after)
         self.request_delay = request_delay
+        self.timeout = timeout
 
         self._make_url_root(url_root=url_root,
                             preview=preview,
