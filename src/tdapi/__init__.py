@@ -23,6 +23,91 @@ logger = logging.getLogger(__name__)
 TD_CONNECTION = None
 
 
+PRODUCTION_APP_PATH = 'TDWebApi/api/'
+SANDBOX_APP_PATH = 'SBTDWebApi/api/'
+
+_APP_PATHS = (PRODUCTION_APP_PATH, SANDBOX_APP_PATH)
+
+_URL_ROOT_REQUIRED = (
+    "url_root is required: pass your organization's TeamDynamix URL, "
+    "e.g. url_root='https://example.teamdynamix.com/TDWebApi/api/' "
+    "(or the bare 'https://example.teamdynamix.com/' and let sandbox= "
+    "choose the application). The shared host api.teamdynamix.com was "
+    "discontinued on 2021-11-13 and now answers every request with 503."
+)
+
+
+def _apply_preview(url_root):
+    """
+    Point a production organization URL at the organization's preview
+    environment, which TeamDynamix hosts under teamdynamixpreview.com.
+
+    Raises TDConfigurationException rather than guessing when the host
+    is not recognizably a TeamDynamix one -- silently sending preview
+    traffic to a production tenant is the failure worth preventing.
+    """
+    parts = urllib.parse.urlsplit(url_root)
+    host = parts.hostname or ''
+
+    if host.endswith('.teamdynamixpreview.com'):
+        return url_root
+    if not host.endswith('.teamdynamix.com'):
+        raise TDConfigurationException(
+            "preview=True, but {!r} is not a *.teamdynamix.com host, so the "
+            "preview hostname cannot be derived from it. Pass the preview "
+            "URL directly as url_root instead.".format(url_root))
+
+    netloc = parts.netloc.replace('.teamdynamix.com',
+                                  '.teamdynamixpreview.com')
+    return urllib.parse.urlunsplit(parts._replace(netloc=netloc))
+
+
+def resolve_url_root(url_root, preview=False, sandbox=False):
+    """
+    Build the absolute API root every request URL is joined onto.
+
+    `url_root` is required and is the organization's own TeamDynamix
+    URL. It may be either:
+
+    * a complete API root ending in `TDWebApi/api` (production) or
+      `SBTDWebApi/api` (sandbox), which is used as given; or
+    * a bare organization URL, in which case `sandbox` selects the
+      application path.
+
+    `sandbox=True` against a url_root that already names the production
+    application is a contradiction and raises, rather than quietly
+    sending sandbox-intended traffic to production.
+
+    Returns:
+        The API root, with a trailing slash so urljoin() keeps the path.
+
+    Raises:
+        TDConfigurationException: if url_root is missing, or if the
+            arguments contradict each other.
+    """
+    if not url_root:
+        raise TDConfigurationException(_URL_ROOT_REQUIRED)
+
+    if preview is True:
+        url_root = _apply_preview(url_root)
+
+    normalized = url_root if url_root.endswith('/') else url_root + '/'
+    lowered = normalized.lower()
+
+    for app_path in _APP_PATHS:
+        if not lowered.endswith(app_path.lower()):
+            continue
+        if sandbox is True and app_path == PRODUCTION_APP_PATH:
+            raise TDConfigurationException(
+                "sandbox=True, but url_root {!r} names the production "
+                "application ({}). Pass the sandbox URL, or a bare "
+                "organization URL, instead.".format(url_root,
+                                                    PRODUCTION_APP_PATH))
+        return normalized
+
+    return normalized + (SANDBOX_APP_PATH if sandbox else PRODUCTION_APP_PATH)
+
+
 def make_session(cache_expire_after=None):
     """
     Build the `requests` session a connection will use.
@@ -69,6 +154,14 @@ class TDException(Exception):
 class TDAuthorizationException(Exception):
     """
     Returned for 401 unauthorized HTTP response code.
+    """
+    pass
+
+
+class TDConfigurationException(TDException):
+    """
+    Raised for a connection that cannot be built as configured, before
+    any request is attempted.
     """
     pass
 
@@ -122,18 +215,14 @@ class TDConnection(object):
         self.login()
 
     def _make_url_root(self, url_root, preview, sandbox):
-        if url_root is not None:
-            self.url_root = url_root
-        else:
-            if preview is True:
-                self.url_root = 'https://api.teamdynamixpreview.com/'
-            else:
-                self.url_root = 'https://api.teamdynamix.com/'
+        """
+        Resolve `self.url_root` from the caller's organization URL.
 
-            if sandbox is True:
-                self.url_root += 'SBTDWebApi/api/'
-            else:
-                self.url_root += 'TDWebApi/api/'
+        `url_root` is required. See `resolve_url_root()`.
+        """
+        self.url_root = resolve_url_root(url_root=url_root,
+                                         preview=preview,
+                                         sandbox=sandbox)
 
     def _make_url(self, url_stem):
         """
