@@ -345,15 +345,15 @@ class TDConnection:
 
     def __init__(
         self,
-        BEID,
-        WebServicesKey,
-        sandbox=False,
-        preview=False,
-        url_root=None,
-        request_delay=1,
-        cache_expire_after=None,
-        timeout=DEFAULT_TIMEOUT,
-        max_attempts=DEFAULT_MAX_ATTEMPTS,
+        BEID: str,
+        WebServicesKey: str,
+        sandbox: bool = False,
+        preview: bool = False,
+        url_root: str | None = None,
+        request_delay: float = 1,
+        cache_expire_after: int | None = None,
+        timeout: float = DEFAULT_TIMEOUT,
+        max_attempts: int = DEFAULT_MAX_ATTEMPTS,
     ):
         """
         TODO this only uses the new superuser login option with BEID and
@@ -794,15 +794,15 @@ class TDUserConnection(TDConnection):
 
     def __init__(
         self,
-        username,
-        password,
-        sandbox=False,
-        preview=False,
-        url_root=None,
-        request_delay=1,
-        cache_expire_after=None,
-        timeout=DEFAULT_TIMEOUT,
-        max_attempts=DEFAULT_MAX_ATTEMPTS,
+        username: str,
+        password: str,
+        sandbox: bool = False,
+        preview: bool = False,
+        url_root: str | None = None,
+        request_delay: float = 1,
+        cache_expire_after: int | None = None,
+        timeout: float = DEFAULT_TIMEOUT,
+        max_attempts: int = DEFAULT_MAX_ATTEMPTS,
     ):
         self.bearer_token = False
         self.username = username
