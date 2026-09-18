@@ -112,7 +112,7 @@ skips = ["B101"]
 
 [tool.pytest.ini_options]
 testpaths = ["tests"]
-pythonpath = ["src"]
+pythonpath = ["src", "."]  # "." so tests can import shared constants from tests.conftest
 addopts = "--strict-markers -ra --tb=short"
 
 [tool.coverage.run]
@@ -122,6 +122,12 @@ branch = true
 omit = ["*/_version.py"]
 
 [tool.coverage.report]
+# Set just below the total measured when the suite was added (2026-09-18).
+# The number is low because this release deliberately did not touch the
+# legacy per-object wrappers (asset, cmdb, person, project, group, kb);
+# the transport core in __init__.py, which is what changed, is at 91%.
+# Raise this as those wrappers get covered.
+fail_under = 45
 exclude_lines = [
     "pragma: no cover",
     "if TYPE_CHECKING:",
