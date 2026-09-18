@@ -1,7 +1,30 @@
-build/
+# Python
+__pycache__/
+*.py[cod]
+*.so
+*.egg-info/
 dist/
-tdapi.egg-info/
-*.pyc
-.venv
-cache.sqlite
+build/
+
+# hatch-vcs writes this on every build from git describe — derived, never committed
+src/tdapi/_version.py
+
+# Virtual environments
+.venv/
+venv/
+
+# Testing
+.coverage
+htmlcov/
+.pytest_cache/
+.ruff_cache/
+.mypy_cache/
+
+# requests-cache backing store (opt-in; see TDConnection(cache_expire_after=))
 *.sqlite
+
+# Claude Code local settings
+.claude/
+
+# OS
+.DS_Store

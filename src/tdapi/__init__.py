@@ -2,15 +2,21 @@
 TeamDynamix API.
 """
 import json
-import urllib.parse
 import logging
 import time
+import urllib.parse
+from importlib.metadata import PackageNotFoundError, version
 
 import requests
 import requests_cache
 
 import tdapi.asset
 import tdapi.cmdb
+
+try:
+    __version__ = version("tdapi")
+except PackageNotFoundError:  # pragma: no cover - source tree, not installed
+    __version__ = "0.0.0+unknown"
 
 # cache requests:
 requests_cache.install_cache(expire_after=60*15)

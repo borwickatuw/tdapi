@@ -1,0 +1,130 @@
+[project]
+name = "tdapi"
+description = "Python client for the TeamDynamix REST API."
+readme = "README.md"
+requires-python = ">=3.12"
+license = { text = "BSD-3-Clause" }
+authors = [{ name = "John Borwick" }]
+classifiers = ["License :: OSI Approved :: BSD License"]
+# Version is derived from git tags by hatch-vcs (see [tool.hatch.*] below).
+dynamic = ["version"]
+dependencies = [
+    "requests>=2.32.3",
+]
+
+[project.optional-dependencies]
+# requests-cache is only needed by callers that pass
+# `cache_expire_after=` to TDConnection. Bulk exporters must NOT cache
+# (see README "Caching"), so it stays out of the base dependency set.
+cache = ["requests-cache>=1.2.1"]
+
+[project.urls]
+Homepage = "https://github.com/borwickatuw/tdapi"
+
+[dependency-groups]
+dev = [
+    "black>=24.0",
+    "isort>=5.13",
+    "ruff>=0.6",
+    "bandit[toml]>=1.7",
+]
+test = [
+    "pytest>=8.0",
+    "pytest-cov>=4.0",
+    "requests-mock>=1.12",
+    "requests-cache>=1.2.1",
+]
+
+[build-system]
+requires = ["hatchling", "hatch-vcs>=0.4"]
+build-backend = "hatchling.build"
+
+[tool.hatch.version]
+source = "vcs"
+# Used when no git tags are reachable (fresh clone before the first tag).
+fallback-version = "0.0.0+unknown"
+
+[tool.hatch.build.hooks.vcs]
+version-file = "src/tdapi/_version.py"
+
+[tool.hatch.build.targets.wheel]
+packages = ["src/tdapi"]
+
+[tool.uv]
+# Library: keep group inclusion explicit (PYTHON.md §6).
+default-groups = []
+
+[tool.black]
+line-length = 100
+target-version = ["py312"]
+
+[tool.isort]
+profile = "black"
+line_length = 100
+
+[tool.ruff]
+line-length = 100
+extend-exclude = ["*.md"]
+
+[tool.ruff.lint]
+# Excluded categories with rationale:
+# - FBT: boolean-trap. `sandbox=True` / `bearer_required=False` are the
+#   established call shape of this client and of the TD API itself.
+# - TRY: tryceratops. Stylistic; this client raises a small custom
+#   exception hierarchy deliberately.
+select = [
+    "A",      # flake8-builtins
+    "ARG",    # flake8-unused-arguments
+    "B",      # flake8-bugbear
+    "BLE",    # flake8-blind-except
+    "C90",    # mccabe complexity
+    "E",      # pycodestyle errors
+    "ERA",    # eradicate
+    "F",      # pyflakes
+    "N",      # pep8-naming
+    "S",      # flake8-bandit
+    "SIM",    # flake8-simplify
+    "T20",    # flake8-print
+    "UP",     # pyupgrade
+    "W",      # pycodestyle warnings
+    "PLC",
+    "PLE",
+    "PLW",
+]
+
+[tool.ruff.lint.mccabe]
+max-complexity = 10
+
+[tool.ruff.lint.pylint]
+max-args = 5
+max-statements = 50
+
+[tool.ruff.lint.per-file-ignores]
+"tests/*" = ["S101", "ARG001", "ARG002", "ARG005", "S105", "S106", "S107"]
+# The TD API's own field names are PascalCase; keyword arguments that
+# mirror them (BEID, WebServicesKey) keep the API's spelling.
+"src/tdapi/__init__.py" = ["N803"]
+"examples/*" = ["T20", "S101", "ERA001"]
+
+[tool.bandit]
+exclude_dirs = [".venv", "tests"]
+skips = ["B101"]
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]
+pythonpath = ["src"]
+addopts = "--strict-markers -ra --tb=short"
+
+[tool.coverage.run]
+source = ["src/tdapi"]
+branch = true
+# NOT omitting __init__.py: TDConnection — the core of this client — lives there.
+omit = ["*/_version.py"]
+
+[tool.coverage.report]
+exclude_lines = [
+    "pragma: no cover",
+    "if TYPE_CHECKING:",
+    "if __name__ == .__main__.:",
+]
+show_missing = true
