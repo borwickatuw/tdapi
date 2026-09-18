@@ -81,6 +81,33 @@ class TDBaseTicket(tdapi.obj.TDObject):
             self._single_queried = True
 
 
+    def feed(self):
+        """
+        The ticket's feed: GET /{app}/tickets/{id}/feed.
+
+        This is the ticket's conversation and audit trail -- comments,
+        status changes, reassignments -- and it is the part of a ticket
+        that is *not* present in the ticket record itself, so an
+        archival read has to ask for it separately.
+
+        Returns:
+            A list of feed entries, empty if the ticket has none.
+        """
+        return tdapi.TD_CONNECTION.json_request_roller(
+            method='get',
+            url_stem=self.url() + '/feed')
+
+    def tasks(self):
+        """
+        The ticket's tasks: GET /{app}/tickets/{id}/tasks.
+
+        Returns:
+            A list of task records, empty if the ticket has none.
+        """
+        return tdapi.TD_CONNECTION.json_request_roller(
+            method='get',
+            url_stem=self.url() + '/tasks')
+
     def add_to_feed(self, status_id, is_private, comments, notify):
         feed_update_url = self.url() + '/feed'
         data = {'NewStatusID': status_id,
