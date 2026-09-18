@@ -1,4 +1,4 @@
-class CachedRecordManager(object):
+class CachedRecordManager:
     """
     This is a horrible class to let you do client-side comparisons
     rather than relying on the API's search. Only use this if the API
@@ -33,7 +33,7 @@ class CachedRecordManager(object):
         return True
 
 
-class KeyMatcher(object):
+class KeyMatcher:
     """
     Lets you define keys that should be tracked. You then add()
     matches. You can then match() against the keys you defined.
@@ -62,7 +62,7 @@ class KeyMatcher(object):
         Note: match_dict values will be ignored if they do not exist,
         are None, or are ''.
         """
-        for match_key in match_dict.keys():
+        for match_key in match_dict:
             assert match_key in self.keys_to_track
 
         for key_to_track in self.keys_to_track:
@@ -79,7 +79,7 @@ class KeyMatcher(object):
 
         Checks to make sure match_dict keys are valid.
         """
-        for match_key in match_dict.keys():
+        for match_key in match_dict:
             assert match_key in self.keys_to_track
 
         for key_to_track in self.keys_to_track:
@@ -99,7 +99,7 @@ class KeyMatchingCachedRecordManager(CachedRecordManager):
     """
 
     def __init__(self, *args, **kwargs):
-        super(KeyMatchingCachedRecordManager, self).__init__(*args, **kwargs)
+        super().__init__(*args, **kwargs)
         self.key_matcher = KeyMatcher(self.KEYS_TO_TRACK)
         self._add_matches()
 
@@ -109,7 +109,7 @@ class KeyMatchingCachedRecordManager(CachedRecordManager):
         """
         for record in self.records:
             match_dict = {
-                key_to_track: record.get(key_to_track) for key_to_track in self.key_matcher.keys()
+                key_to_track: record.get(key_to_track) for key_to_track in self.key_matcher
             }
             self.key_matcher.add(obj=record, match_dict=match_dict)
 

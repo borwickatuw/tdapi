@@ -8,10 +8,7 @@ import tdapi.obj
 
 class TDPersonManager(tdapi.obj.TDObjectManager):
     def _copy_or_create(self, data, data_to_merge=None):
-        if data is None:
-            new_data = {}
-        else:
-            new_data = copy.deepcopy(data)
+        new_data = {} if data is None else copy.deepcopy(data)
         new_data.update(data_to_merge)
         return new_data
 
@@ -53,7 +50,7 @@ class TDPersonManager(tdapi.obj.TDObjectManager):
         return self.search(data)
 
     def get(self, uid):
-        user_url_stem = "people/{}".format(uid)
+        user_url_stem = f"people/{uid}"
         td_struct = tdapi.TD_CONNECTION.json_request_roller(method="get", url_stem=user_url_stem)
         assert len(td_struct) == 1
         return self.object_class(td_struct[0])
@@ -72,7 +69,7 @@ class TDPersonManager(tdapi.obj.TDObjectManager):
         elif employee is False:
             userlist_vars.append("isEmployee=False")
         if user_type is not None:
-            userlist_vars.append("userType={}".format(user_type))
+            userlist_vars.append(f"userType={user_type}")
         userlist_url += "&".join(userlist_vars)
 
         return [
@@ -85,7 +82,7 @@ class TDPersonManager(tdapi.obj.TDObjectManager):
 
 class TDPerson(tdapi.obj.TDObject):
     def __init__(self, *args, **kwargs):
-        super(TDPerson, self).__init__(*args, **kwargs)
+        super().__init__(*args, **kwargs)
         self._single_queried = False
 
     def __eq__(self, otro):
@@ -105,7 +102,7 @@ class TDPerson(tdapi.obj.TDObject):
         return self.get("UID")
 
     def person_url(self):
-        return "people/{}".format(self.person_id())
+        return f"people/{self.person_id()}"
 
     def _ensure_single_query(self):
         if self._single_queried is False:
@@ -127,20 +124,20 @@ class TDPerson(tdapi.obj.TDObject):
         # does not currently support the optional arguments
         add_group_uri = (
             self.person_url()
-            + "/groups/{}".format(group_id)
-            + "?isPrimary={}".format(isPrimary)
-            + "&isNotified={}".format(isNotified)
-            + "&isManager={}".format(isManager)
+            + f"/groups/{group_id}"
+            + f"?isPrimary={isPrimary}"
+            + f"&isNotified={isNotified}"
+            + f"&isManager={isManager}"
         )
 
         tdapi.TD_CONNECTION.request(method="put", url_stem=add_group_uri)
 
     def del_group_by_id(self, group_id):
-        del_group_uri = self.person_url() + "/groups/{}".format(group_id)
+        del_group_uri = self.person_url() + f"/groups/{group_id}"
         tdapi.TD_CONNECTION.request(method="delete", url_stem=del_group_uri)
 
     def set_active(self, active):
-        activate_uri = self.person_url() + "/isactive?status={}".format(active)
+        activate_uri = self.person_url() + f"/isactive?status={active}"
         tdapi.TD_CONNECTION.request(method="put", url_stem=activate_uri)
 
     def activate(self):
@@ -150,7 +147,7 @@ class TDPerson(tdapi.obj.TDObject):
         return self.set_active(False)
 
     def is_active(self):
-        return self.get("IsActive") == True
+        return self.get("IsActive") is True
 
     def update(self, update_data):
         # don't mess with the original data. copy into the update all
@@ -165,10 +162,10 @@ class TDPerson(tdapi.obj.TDObject):
             if self.get(update_key) != update_val:
                 seen_all = False
                 break
-        if seen_all == True:
+        if seen_all:
             return
 
-        for orig_attr in self.td_struct.keys():
+        for orig_attr in self.td_struct:
             if orig_attr not in update_data:
                 update_data[orig_attr] = self.td_struct[orig_attr]
 

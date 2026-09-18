@@ -111,7 +111,7 @@ class TDConfigurationItemManager(tdapi.obj.TDObjectManager):
         return self.search(data={})
 
     def get(self, cmdb_id):
-        cmdb_url_stem = "cmdb/{}".format(cmdb_id)
+        cmdb_url_stem = f"cmdb/{cmdb_id}"
         td_struct = tdapi.TD_CONNECTION.json_request_roller(method="get", url_stem=cmdb_url_stem)
         assert len(td_struct) == 1
         return self.object_class(td_struct[0])
@@ -137,7 +137,7 @@ class TDConfigurationItemManager(tdapi.obj.TDObjectManager):
 
 class TDConfigurationItem(tdapi.obj.TDObject):
     def __init__(self, *args, **kwargs):
-        super(TDConfigurationItem, self).__init__(*args, **kwargs)
+        super().__init__(*args, **kwargs)
         self._single_queried = False
         self._attributes = None
 
@@ -153,7 +153,7 @@ class TDConfigurationItem(tdapi.obj.TDObject):
         return self.td_struct["Name"]
 
     def __unicode__(self):
-        return "{}".format(self.name())
+        return f"{self.name()}"
 
     __str__ = __unicode__
 
@@ -161,13 +161,13 @@ class TDConfigurationItem(tdapi.obj.TDObject):
         return self.td_struct["ID"]
 
     def url(self):
-        return "cmdb/{}".format(self.id())
+        return f"cmdb/{self.id()}"
 
     def relationships(self):
         return [
             TDRelationship(td_struct)
             for td_struct in tdapi.TD_CONNECTION.json_request_roller(
-                method="get", url_stem="{}/relationships".format(self.url())
+                method="get", url_stem=f"{self.url()}/relationships"
             )
         ]
 
@@ -221,8 +221,8 @@ class TDConfigurationItem(tdapi.obj.TDObject):
     def add_relationship(self, other_ci_id):
         # TODO this looks a bit ugly and probably needs to be redone.
         uses_relationship = TDRelationshipType.objects.by_name("Uses")
-        add_url = self.url() + "/relationships?typeid={}&".format(uses_relationship.id())
-        add_url += "otheritemid={}&".format(other_ci_id)
+        add_url = self.url() + f"/relationships?typeid={uses_relationship.id()}&"
+        add_url += f"otheritemid={other_ci_id}&"
         add_url += "isparent=False"
 
         tdapi.TD_CONNECTION.json_request(method="put", url_stem=add_url)

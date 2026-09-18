@@ -101,10 +101,26 @@ max-statements = 50
 
 [tool.ruff.lint.per-file-ignores]
 "tests/*" = ["S101", "ARG001", "ARG002", "ARG005", "S105", "S106", "S107"]
-# The TD API's own field names are PascalCase; keyword arguments that
-# mirror them (BEID, WebServicesKey) keep the API's spelling.
-"src/tdapi/__init__.py" = ["N803"]
-"examples/*" = ["T20", "S101", "ERA001"]
+
+# Names that mirror TeamDynamix's own API, and exception names that are
+# this package's published surface. Renaming any of them would break
+# every caller for no behavioural gain:
+#   N803  BEID / WebServicesKey / isPrimary — the API's own spellings
+#   N802  TDRoomFactory / TDTicketAppFactory — class factories, named
+#         for what they return
+#   N818  TDException / TDAuthorizationException — public since 0.1
+"src/tdapi/__init__.py" = ["N803", "N818", "ERA001"]
+"src/tdapi/person.py" = ["N803", "S101", "PLW1641"]
+"src/tdapi/asset.py" = ["N802", "S101", "PLW1641"]
+"src/tdapi/ticket.py" = ["N802", "S101"]
+"src/tdapi/group.py" = ["PLW1641"]
+"src/tdapi/cmdb.py" = ["S101"]
+"src/tdapi/util.py" = ["S101"]
+
+# examples/ are illustrative scripts, not library code: they print, they
+# carry obvious placeholder credentials, and they configure logging
+# before importing.
+"examples/*" = ["T20", "S101", "S105", "S106", "ERA001", "E402", "SIM115"]
 
 [tool.bandit]
 exclude_dirs = [".venv", "tests"]

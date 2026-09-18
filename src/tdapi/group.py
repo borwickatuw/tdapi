@@ -1,6 +1,4 @@
 import copy
-import random
-import string
 
 import tdapi
 import tdapi.obj
@@ -9,10 +7,7 @@ import tdapi.person
 
 class TDGroupManager(tdapi.obj.TDObjectManager):
     def _copy_or_create(self, data, data_to_merge=None):
-        if data is None:
-            new_data = {}
-        else:
-            new_data = copy.deepcopy(data)
+        new_data = {} if data is None else copy.deepcopy(data)
         new_data.update(data_to_merge)
         return new_data
 
@@ -70,7 +65,7 @@ class TDGroup(tdapi.obj.TDObject):
         return "groups/{}".format(self.get("ID"))
 
     def members(self):
-        members_url_stem = "{}/members".format(self.url())
+        members_url_stem = f"{self.url()}/members"
         return [
             TDGroupMember(td_struct)
             for td_struct in tdapi.TD_CONNECTION.json_request_roller(
@@ -86,10 +81,10 @@ class TDGroup(tdapi.obj.TDObject):
             if self.get(update_key) != update_val:
                 seen_all = False
                 break
-        if seen_all == True:
+        if seen_all:
             return
 
-        for orig_attr in self.td_struct.keys():
+        for orig_attr in self.td_struct:
             if orig_attr not in update_data:
                 update_data[orig_attr] = self.td_struct[orig_attr]
 

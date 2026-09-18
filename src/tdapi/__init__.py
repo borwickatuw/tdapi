@@ -90,9 +90,9 @@ def _apply_preview(url_root):
         return url_root
     if not host.endswith(".teamdynamix.com"):
         raise TDConfigurationException(
-            "preview=True, but {!r} is not a *.teamdynamix.com host, so the "
+            f"preview=True, but {url_root!r} is not a *.teamdynamix.com host, so the "
             "preview hostname cannot be derived from it. Pass the preview "
-            "URL directly as url_root instead.".format(url_root)
+            "URL directly as url_root instead."
         )
 
     netloc = parts.netloc.replace(".teamdynamix.com", ".teamdynamixpreview.com")
@@ -136,9 +136,9 @@ def resolve_url_root(url_root, preview=False, sandbox=False):
             continue
         if sandbox is True and app_path == PRODUCTION_APP_PATH:
             raise TDConfigurationException(
-                "sandbox=True, but url_root {!r} names the production "
-                "application ({}). Pass the sandbox URL, or a bare "
-                "organization URL, instead.".format(url_root, PRODUCTION_APP_PATH)
+                f"sandbox=True, but url_root {url_root!r} names the production "
+                f"application ({PRODUCTION_APP_PATH}). Pass the sandbox URL, or a bare "
+                "organization URL, instead."
             )
         return normalized
 
@@ -163,8 +163,8 @@ def filename_from_content_disposition(value):
 
     encoded = None
     plain = None
-    for part in value.split(";"):
-        part = part.strip()
+    for raw_part in value.split(";"):
+        part = raw_part.strip()
         if part.lower().startswith("filename*="):
             encoded = part.split("=", 1)[1].strip()
         elif part.lower().startswith("filename="):
@@ -286,7 +286,7 @@ def make_session(cache_expire_after=None):
         return requests.Session()
 
     try:
-        import requests_cache
+        import requests_cache  # noqa: PLC0415 - optional extra, imported on demand
     except ImportError as exc:  # pragma: no cover - depends on install extras
         raise TDException(
             "cache_expire_after was set but requests-cache is not installed; "
@@ -324,7 +324,7 @@ class TDConfigurationException(TDException):
 
 
 # TODO probably rename this to TDAdminConnection
-class TDConnection(object):
+class TDConnection:
     """
     This uses the TeamDynamix API:
 
@@ -406,17 +406,17 @@ class TDConnection(object):
         return urllib.parse.urljoin(self.url_root, url_stem)
 
     def add_authorization_header(self, headers):
-        headers["Authorization"] = "Bearer {}".format(self.bearer_token)
+        headers["Authorization"] = f"Bearer {self.bearer_token}"
 
     def handle_resp(self, resp):
         if resp.status_code == 401:
-            raise TDAuthorizationException("{} returned 401 status\n{}".format(resp.url, resp.text))
+            raise TDAuthorizationException(f"{resp.url} returned 401 status\n{resp.text}")
         elif resp.status_code not in [200, 201]:
             raise TDException(
-                "{} returned non-200 status ({})\n{}".format(resp.url, resp.status_code, resp.text)
+                f"{resp.url} returned non-200 status ({resp.status_code})\n{resp.text}"
             )
 
-    def files_request(self, method, url_stem, files):
+    def files_request(self, method, url_stem, files):  # noqa: ARG002 - published signature
         headers = {}
         self.add_authorization_header(headers)
         resp = self.session.post(
@@ -466,6 +466,98 @@ class TDConnection(object):
             return DEFAULT_MAX_RETRY_WAIT
         return server_wait
 
+    def _build_request(self, method, url_stem, data, bearer_required, content_type):
+        """
+        Assemble one request's URL, headers and body.
+
+        Returns:
+            A (url, headers, payload) tuple.
+
+        Raises:
+            TDException: if the HTTP method is not one this client sends.
+        """
+        if method not in ALLOWED_METHODS:
+            raise TDException(f"method {method} not supported")
+
+        headers = {}
+        if content_type is not None:
+            headers["Content-Type"] = content_type
+
+        if bearer_required:
+            self.add_authorization_header(headers)
+
+        payload = json.dumps(data) if data is not None else ""
+        return self._make_url(url_stem), headers, payload
+
+    def _backoff_after_exception(self, attempt, method, url, exc):
+        """
+        Sleep before retrying a connection-level failure.
+
+        Raises:
+            TDException: if the retry budget is spent, naming the
+                attempt count so the log says why the run gave up.
+        """
+        self.rate_limiter.record()
+        if attempt == self.max_attempts:
+            raise TDException(
+                f"{method.upper()} {url} failed after {self.max_attempts} attempts: {exc}"
+            ) from exc
+
+        wait = self.retry_wait(attempt, None)
+        logger.warning(
+            "%s %s: %s; retrying in %.1fs (attempt %s/%s)",
+            method.upper(),
+            url,
+            exc,
+            wait,
+            attempt,
+            self.max_attempts,
+        )
+        time.sleep(wait)
+
+    def _should_retry_response(self, attempt, method, url, resp, stream):
+        """
+        Decide whether `resp` earns another attempt, and pause if so.
+
+        Returns:
+            True if the caller should loop again -- in which case this
+            has already slept and, for a streaming response, released
+            the connection. False when the response is final, whether
+            it succeeded or the budget is spent.
+        """
+        if resp.status_code not in RETRYABLE_STATUS_CODES:
+            return False
+
+        if attempt == self.max_attempts:
+            logger.error(
+                "%s %s still returning %s after %s attempts",
+                method.upper(),
+                url,
+                resp.status_code,
+                self.max_attempts,
+            )
+            return False
+
+        wait = self.retry_wait(attempt, resp)
+        logger.warning(
+            "%s %s returned %s; retrying in %.1fs (attempt %s/%s)",
+            method.upper(),
+            url,
+            resp.status_code,
+            wait,
+            attempt,
+            self.max_attempts,
+        )
+        if resp.status_code == 429:
+            # Slow every thread on this connection, not just this one.
+            self.rate_limiter.pause(wait)
+        # A retried streaming response still holds its connection;
+        # give it back before asking for another.
+        if stream:
+            resp.close()
+        time.sleep(wait)
+        return True
+
     def send(
         self,
         method,
@@ -498,22 +590,9 @@ class TDConnection(object):
             TDException: if the method is unsupported, or if a
                 connection error outlived the retry budget.
         """
-        if method not in ALLOWED_METHODS:
-            raise TDException("method {} not supported".format(method))
-
-        headers = {}
-        if content_type is not None:
-            headers["Content-Type"] = content_type
-
-        if bearer_required:
-            self.add_authorization_header(headers)
-
-        if data is not None:
-            payload = json.dumps(data)
-        else:
-            payload = ""
-
-        url = self._make_url(url_stem)
+        url, headers, payload = self._build_request(
+            method, url_stem, data, bearer_required, content_type
+        )
         resp = None
 
         for attempt in range(1, self.max_attempts + 1):
@@ -537,24 +616,7 @@ class TDConnection(object):
                     stream=stream,
                 )
             except RETRYABLE_EXCEPTIONS as exc:
-                self.rate_limiter.record()
-                if attempt == self.max_attempts:
-                    raise TDException(
-                        "{} {} failed after {} attempts: {}".format(
-                            method.upper(), url, self.max_attempts, exc
-                        )
-                    ) from exc
-                wait = self.retry_wait(attempt, None)
-                logger.warning(
-                    "%s %s: %s; retrying in %.1fs (attempt %s/%s)",
-                    method.upper(),
-                    url,
-                    exc,
-                    wait,
-                    attempt,
-                    self.max_attempts,
-                )
-                time.sleep(wait)
+                self._backoff_after_exception(attempt, method, url, exc)
                 continue
 
             # A cached response consumed no quota, so it must not push
@@ -564,37 +626,8 @@ class TDConnection(object):
 
             self.note_rate_limit_headers(resp)
 
-            if resp.status_code not in RETRYABLE_STATUS_CODES:
+            if not self._should_retry_response(attempt, method, url, resp, stream):
                 break
-
-            if attempt == self.max_attempts:
-                logger.error(
-                    "%s %s still returning %s after %s attempts",
-                    method.upper(),
-                    url,
-                    resp.status_code,
-                    self.max_attempts,
-                )
-                break
-
-            wait = self.retry_wait(attempt, resp)
-            logger.warning(
-                "%s %s returned %s; retrying in %.1fs (attempt %s/%s)",
-                method.upper(),
-                url,
-                resp.status_code,
-                wait,
-                attempt,
-                self.max_attempts,
-            )
-            if resp.status_code == 429:
-                # Slow every thread on this connection, not just this one.
-                self.rate_limiter.pause(wait)
-            # A retried streaming response still holds its connection;
-            # give it back before asking for another.
-            if stream:
-                resp.close()
-            time.sleep(wait)
 
         return resp
 

@@ -19,18 +19,12 @@ class TDKnowledgeArticleManager(tdapi.obj.TDObjectManager):
         ]
 
     def all(self, data=None):
-        if data is None:
-            new_data = {}
-        else:
-            new_data = copy.deepcopy(data)
+        new_data = {} if data is None else copy.deepcopy(data)
         new_data["Status"] = None
         return self.search(new_data)
 
     def approved(self, data=None):
-        if data is None:
-            new_data = {}
-        else:
-            new_data = copy.deepcopy(data)
+        new_data = {} if data is None else copy.deepcopy(data)
         new_data["Status"] = "Approved"
         return self.search(new_data)
 
@@ -38,7 +32,7 @@ class TDKnowledgeArticleManager(tdapi.obj.TDObjectManager):
 class TDKnowledgeArticle(tdapi.obj.TDObject):
     def __init__(self, *args, **kwargs):
         # fix:
-        super(TDKnowledgeArticle, self).__init__(*args, **kwargs)
+        super().__init__(*args, **kwargs)
         self._single_queried = False
 
     def __str__(self):
@@ -62,10 +56,10 @@ class TDKnowledgeArticle(tdapi.obj.TDObject):
             if self.get(update_key) != update_val:
                 seen_all = False
                 break
-        if seen_all == True:
+        if seen_all:
             return
 
-        for orig_attr in self.td_struct.keys():
+        for orig_attr in self.td_struct:
             if orig_attr in ("Attachments"):
                 pass
             elif orig_attr not in update_data:

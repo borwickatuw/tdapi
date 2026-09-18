@@ -7,13 +7,12 @@ Use as:
         python people_import.py \
              --BEID BEID-GOES-HERE \
              --WebServicesKey WEBSERVICESKEY-GOES-HERE \
-             --sandbox \ # if you want to update the sandbox
+             --sandbox \\ # if you want to update the sandbox
              --xlsx import-file.xlsx
 """
 
 import argparse
 import logging
-import sys
 
 import tdapi
 

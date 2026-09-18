@@ -127,7 +127,7 @@ class TDAssetManager(tdapi.obj.TDObjectManager):
 
 class TDAsset(tdapi.obj.TDObject):
     def __init__(self, *args, **kwargs):
-        super(TDAsset, self).__init__(*args, **kwargs)
+        super().__init__(*args, **kwargs)
         self._single_queried = False
 
     def _ensure_single_query(self):
@@ -147,7 +147,7 @@ class TDAsset(tdapi.obj.TDObject):
         attributes_struct = self.single_query_get("Attributes")
         attribute_struct = [x for x in attributes_struct if x["Name"] == attr]
         if len(attribute_struct) > 1:
-            raise tdapi.TDException("Too many attributes with name {}".format(attr))
+            raise tdapi.TDException(f"Too many attributes with name {attr}")
         elif len(attribute_struct) == 0:
             return
         else:
@@ -166,7 +166,7 @@ class TDAsset(tdapi.obj.TDObject):
         name = self.name()
         if name is None:
             name = "[Unnamed]"
-        return "{} ({} / {})".format(name, self.serial(), self.tag())
+        return f"{name} ({self.serial()} / {self.tag()})"
 
     __str__ = __unicode__
 
@@ -177,7 +177,7 @@ class TDAsset(tdapi.obj.TDObject):
         return self.td_struct["ConfigurationItemID"]
 
     def cmdb_url(self):
-        return "cmdb/{}".format(self.cmdb_id())
+        return f"cmdb/{self.cmdb_id()}"
 
     def related_cis(self):
         return self.ci().related_items()
@@ -188,7 +188,7 @@ class TDAsset(tdapi.obj.TDObject):
         return self.td_struct["ID"]
 
     def asset_url(self):
-        return "assets/{}".format(self.asset_id())
+        return f"assets/{self.asset_id()}"
 
     def server_side_apps(self):
         return self.ci().related_items("Server-side application")
@@ -213,7 +213,7 @@ class TDAsset(tdapi.obj.TDObject):
     def location_and_room_string(self):
         location = self.location()
         room = self.room()
-        return "{}: {}".format(location, room)
+        return f"{location}: {room}"
 
     def related_resources(self):
         return TDResourceItemQuerySet(
@@ -237,10 +237,10 @@ class TDAsset(tdapi.obj.TDObject):
             if self.get(update_key) != update_val:
                 seen_all = False
                 break
-        if seen_all == True:
+        if seen_all:
             return
 
-        for orig_attr in self.td_struct.keys():
+        for orig_attr in self.td_struct:
             if orig_attr not in update_data:
                 update_data[orig_attr] = self.td_struct[orig_attr]
 
@@ -256,15 +256,12 @@ class TDLocationQuerySet(tdapi.obj.TDQuerySet):
 
 class TDLocationManager(tdapi.obj.TDObjectManager):
     def _copy_or_create(self, data, data_to_merge=None):
-        if data is None:
-            new_data = {}
-        else:
-            new_data = copy.deepcopy(data)
+        new_data = {} if data is None else copy.deepcopy(data)
         new_data.update(data_to_merge)
         return new_data
 
     def get(self, location_id):
-        room_url_stem = "locations/{}".format(location_id)
+        room_url_stem = f"locations/{location_id}"
         td_struct = tdapi.TD_CONNECTION.json_request_roller(method="get", url_stem=room_url_stem)
         assert len(td_struct) == 1
         return self.object_class(td_struct[0])
@@ -304,7 +301,7 @@ class TDLocationManager(tdapi.obj.TDObjectManager):
 
 class TDLocation(tdapi.obj.TDObject):
     def __init__(self, *args, **kwargs):
-        super(TDLocation, self).__init__(*args, **kwargs)
+        super().__init__(*args, **kwargs)
         self._single_queried = False
         self.TDRoom = TDRoomFactory(location=self)
 
@@ -312,7 +309,7 @@ class TDLocation(tdapi.obj.TDObject):
         return self.get("ID")
 
     def location_url(self):
-        return "locations/{}".format(self.location_id())
+        return f"locations/{self.location_id()}"
 
     def __eq__(self, otro):
         if otro is None:
@@ -381,7 +378,7 @@ class TDBaseRoom(tdapi.obj.TDObject):
         return self.get("ID")
 
     def url(self):
-        return self.location().location_url() + "/rooms/{}".format(self.room_id())
+        return self.location().location_url() + f"/rooms/{self.room_id()}"
 
     def update(self, update_data):
         # don't mess with the original data. copy into the update all
@@ -396,10 +393,10 @@ class TDBaseRoom(tdapi.obj.TDObject):
             if self.get(update_key) != update_val:
                 seen_all = False
                 break
-        if seen_all == True:
+        if seen_all:
             return
 
-        for orig_attr in self.td_struct.keys():
+        for orig_attr in self.td_struct:
             if orig_attr not in update_data:
                 update_data[orig_attr] = self.td_struct[orig_attr]
 

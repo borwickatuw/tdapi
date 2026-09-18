@@ -5,19 +5,18 @@ Foundational class for TD objects.
 import tdapi
 
 
-class TDQuerySet(object):
+class TDQuerySet:
     def __init__(self, data):
         self.qs = data
 
     def __iter__(self):
-        for item in self.qs:
-            yield item
+        yield from self.qs
 
     def __len__(self):
         return len(self.qs)
 
 
-class TDObjectManager(object):
+class TDObjectManager:
     """
     Modeled on Django's Model Manager. This is the parent class for
     TD search stuff.
@@ -33,7 +32,7 @@ class TDObjectManager(object):
         return tdapi.TD_CONNECTION.json_request(*args, **kwargs)
 
 
-class TDObject(object):
+class TDObject:
     """
     Modeled on Django's Models. This is the parent class for TD
     objects.

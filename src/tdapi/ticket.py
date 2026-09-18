@@ -1,6 +1,4 @@
 import copy
-import random
-import string
 
 import tdapi
 import tdapi.obj
@@ -17,16 +15,13 @@ class TDBaseTicketManager(tdapi.obj.TDObjectManager):
     APP_ID = None
 
     def _copy_or_create(self, data, data_to_merge=None):
-        if data is None:
-            new_data = {}
-        else:
-            new_data = copy.deepcopy(data)
+        new_data = {} if data is None else copy.deepcopy(data)
         new_data.update(data_to_merge)
         return new_data
 
     @classmethod
     def url_prefix(cls):
-        return "{}/tickets".format(cls.APP_ID)
+        return f"{cls.APP_ID}/tickets"
 
     @classmethod
     def make_url(cls, url_stem):
@@ -43,7 +38,7 @@ class TDBaseTicketManager(tdapi.obj.TDObjectManager):
         ]
 
     def get(self, ticket_id):
-        url_stem = self.make_url("/{}".format(ticket_id))
+        url_stem = self.make_url(f"/{ticket_id}")
         td_struct = tdapi.TD_CONNECTION.json_request_roller(method="get", url_stem=url_stem)
         assert len(td_struct) == 1
         return self.object_class(td_struct[0])
@@ -58,14 +53,14 @@ class TDBaseTicket(tdapi.obj.TDObject):
     APP_ID = None
 
     def __init__(self, *args, **kwargs):
-        super(TDBaseTicket, self).__init__(*args, **kwargs)
+        super().__init__(*args, **kwargs)
         self._single_queried = False
 
     def ticket_id(self):
         return self.get("ID")
 
     def url(self):
-        return "{}/tickets/{}".format(self.APP_ID, self.ticket_id())
+        return f"{self.APP_ID}/tickets/{self.ticket_id()}"
 
     def __str__(self):
         return self.get("Title")
@@ -129,9 +124,7 @@ class TDBaseTicket(tdapi.obj.TDObject):
 
         You need to form the patch data yourself!
         """
-        patch_url = "{}?notifyNewResponsible={}".format(
-            self.url(), str(bool(notify_responsible)).lower()
-        )
+        patch_url = f"{self.url()}?notifyNewResponsible={str(bool(notify_responsible)).lower()}"
         tdapi.TD_CONNECTION.request(method="patch", url_stem=patch_url, data=update_data)
 
 

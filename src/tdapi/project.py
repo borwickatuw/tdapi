@@ -8,7 +8,9 @@ import tdapi.obj
 
 class TDProjectQuerySet(tdapi.obj.TDQuerySet):
     def by_end_date(self):
-        end_date_lookup = lambda x: x.td_struct["EndDate"]
+        def end_date_lookup(x):
+            return x.td_struct["EndDate"]
+
         self.qs.sort(key=end_date_lookup)
         return self
 
@@ -41,10 +43,7 @@ class TDProjectManager(tdapi.obj.TDObjectManager):
         )
 
     def _copy_or_create(self, data, data_to_merge=None):
-        if data is None:
-            new_data = {}
-        else:
-            new_data = copy.deepcopy(data)
+        new_data = {} if data is None else copy.deepcopy(data)
         new_data.update(data_to_merge)
         return new_data
 

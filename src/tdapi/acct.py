@@ -31,10 +31,10 @@ class TDAcctDept(tdapi.obj.TDObject):
             if self.get(update_key) != update_val:
                 seen_all = False
                 break
-        if seen_all == True:
+        if seen_all:
             return
 
-        for orig_attr in self.td_struct.keys():
+        for orig_attr in self.td_struct:
             if orig_attr not in update_data:
                 update_data[orig_attr] = self.td_struct[orig_attr]
 
