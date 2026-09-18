@@ -7,7 +7,7 @@ import tdapi.obj
 class TDKnowledgeArticleManager(tdapi.obj.TDObjectManager):
     def search(self, data):
         new_data = copy.deepcopy(data)
-        if not new_data.has_key('ReturnCount'):
+        if 'ReturnCount' not in new_data:
             new_data['ReturnCount'] = 100000
         return [self.object_class(obj)
                 for obj in tdapi.TD_CONNECTION.json_request_roller(

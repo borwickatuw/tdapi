@@ -1,7 +1,7 @@
-import tdapi
 """
 Foundational class for TD objects.
 """
+import tdapi
 
 
 class TDQuerySet(object):
@@ -24,7 +24,11 @@ class TDObjectManager(object):
     object_class = None
 
     def json_request(self, *args, **kwargs):
-        return settings.TD_CONNECTION.json_request(*args, **kwargs)
+        # Was `settings.TD_CONNECTION`, a name this module never
+        # defined or imported: any call raised NameError. The
+        # connection lives on the tdapi package (set_connection()),
+        # which is what every other manager in this package uses.
+        return tdapi.TD_CONNECTION.json_request(*args, **kwargs)
 
 
 class TDObject(object):

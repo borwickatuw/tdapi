@@ -62,15 +62,12 @@ class TDBaseTicket(tdapi.obj.TDObject):
 
     def ticket_id(self):
         return self.get('ID')
-    
+
     def url(self):
         return '{}/tickets/{}'.format(self.APP_ID, self.ticket_id())
 
     def __str__(self):
         return self.get('Title')
-
-    def ticket_id(self):
-        return self.get('ID')
 
     def _ensure_single_query(self):
         if self._single_queried is False:
@@ -137,9 +134,10 @@ class TDBaseTicket(tdapi.obj.TDObject):
 
         You need to form the patch data yourself!
         """
-        patch_url = self.url() + '?notifyNewResponsible={}'.format(notify_responsible)
+        patch_url = '{}?notifyNewResponsible={}'.format(
+            self.url(), str(bool(notify_responsible)).lower())
         tdapi.TD_CONNECTION.request(method='patch',
-                                    url_stem=self.url(),
+                                    url_stem=patch_url,
                                     data=update_data)
 
 

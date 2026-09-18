@@ -64,7 +64,7 @@ class KeyMatcher(object):
             assert match_key in self.keys_to_track
 
         for key_to_track in self.keys_to_track:
-            if match_dict.has_key(key_to_track):
+            if key_to_track in match_dict:
                 match_val = match_dict[key_to_track]
                 if match_val is None or match_val == '':
                     pass
@@ -81,9 +81,9 @@ class KeyMatcher(object):
             assert match_key in self.keys_to_track
 
         for key_to_track in self.keys_to_track:
-            if match_dict.has_key(key_to_track):
+            if key_to_track in match_dict:
                 match_val = match_dict[key_to_track]
-                if self.tracker[key_to_track].has_key(match_val):
+                if match_val in self.tracker[key_to_track]:
                     return self.tracker[key_to_track][match_val]
         return None
 
