@@ -1,5 +1,5 @@
 import copy
-import random
+import secrets
 import string
 
 import tdapi
@@ -191,7 +191,7 @@ class TDPerson(tdapi.obj.TDObject):
             update_data["UserName"] = update_data["AuthenticationUserName"]
         if "Password" not in update_data:
             random_password = "".join(
-                random.choice(string.ascii_uppercase + string.digits) for _ in range(20)
+                secrets.choice(string.ascii_uppercase + string.digits) for _ in range(20)
             )
             update_data["Password"] = random_password
         if "AlertEmail" not in update_data:

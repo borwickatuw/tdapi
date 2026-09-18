@@ -1,5 +1,7 @@
 """The higher-level object layer, including the four fixed defects."""
 
+import pytest
+
 import tdapi
 import tdapi.obj
 import tdapi.ticket
@@ -99,3 +101,44 @@ def test_cached_record_manager_finds_by_all_keys():
 
 def test_version_is_reported_from_package_metadata():
     assert tdapi.__version__
+
+
+class TestProject:
+    """Regressions in the project wrapper, which had never been importable."""
+
+    def test_the_module_imports_at_all(self):
+        # setup.py declared iso8601; project.py was the only user of it,
+        # and the dependency is gone.
+        import tdapi.project
+
+        assert tdapi.project.TDProject
+
+    def test_td_urlstem_formats_the_project_id(self):
+        import tdapi.project
+
+        # Regression: this referenced an undefined `project_details_url`,
+        # which was also format()'s only positional argument.
+        project = tdapi.project.TDProject({"ID": 77})
+        assert project.td_urlstem() == "Projects/Details/?TID=77"
+
+    def test_dates_parse_with_the_trailing_z_teamdynamix_sends(self):
+        import tdapi.project
+
+        project = tdapi.project.TDProject({"StartDate": "2020-03-04T00:00:00Z"})
+        assert project.start_date() == "2020-03-04"
+
+    def test_dates_parse_with_an_offset(self):
+        import tdapi.project
+
+        project = tdapi.project.TDProject({"EndDate": "2026-09-18T12:34:56.789-07:00"})
+        assert project.end_date() == "2026-09-18"
+
+
+def test_an_ambiguous_room_lookup_raises_rather_than_returning_none():
+    import tdapi.asset
+
+    # Regression: `assert "Too many matching rooms"` always passes, and
+    # the method then returned None for the case it meant to reject.
+    location = tdapi.asset.TDLocation({"ID": 5, "Rooms": [{"ID": 9}, {"ID": 9}]})
+    with pytest.raises(tdapi.TDException):
+        location.get_room(9)

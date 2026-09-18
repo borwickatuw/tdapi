@@ -1,7 +1,6 @@
 import copy
+import datetime
 import time
-
-import iso8601
 
 import tdapi
 import tdapi.obj
@@ -12,6 +11,20 @@ class TDProjectQuerySet(tdapi.obj.TDQuerySet):
         end_date_lookup = lambda x: x.td_struct["EndDate"]
         self.qs.sort(key=end_date_lookup)
         return self
+
+
+def parse_td_date(value):
+    """
+    Parse a TeamDynamix timestamp into a datetime.
+
+    Was `iso8601.parse_date`; the stdlib covers the same formats from
+    Python 3.11 on, including the trailing "Z" TeamDynamix uses, so the
+    third-party dependency bought nothing.
+
+    Raises:
+        ValueError: if the value is not an ISO 8601 timestamp.
+    """
+    return datetime.datetime.fromisoformat(value)
 
 
 class TDProjectManager(tdapi.obj.TDObjectManager):
@@ -86,13 +99,13 @@ class TDProject(tdapi.obj.TDObject):
         ]
 
     def start_date(self):
-        return iso8601.parse_date(self.td_struct["StartDate"]).strftime("%Y-%m-%d")
+        return parse_td_date(self.td_struct["StartDate"]).strftime("%Y-%m-%d")
 
     def end_date(self):
-        return iso8601.parse_date(self.td_struct["EndDate"]).strftime("%Y-%m-%d")
+        return parse_td_date(self.td_struct["EndDate"]).strftime("%Y-%m-%d")
 
     def td_urlstem(self):
-        return "Projects/Details/?TID={}".format(project_details_url, self.td_struct["ID"])
+        return "Projects/Details/?TID={}".format(self.td_struct["ID"])
 
 
 tdapi.obj.relate_cls_to_manager(TDProject, TDProjectManager)

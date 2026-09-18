@@ -337,7 +337,11 @@ class TDLocation(tdapi.obj.TDObject):
                 "Room ID {} not found in location ID {}".format(room_id, self.td_struct["ID"])
             )
         elif len(matching_rooms) > 1:
-            assert "Too many matching rooms"
+            raise tdapi.TDException(
+                "Room ID {} matched {} rooms in location ID {}".format(
+                    room_id, len(matching_rooms), self.td_struct["ID"]
+                )
+            )
         else:
             return self.TDRoom(matching_rooms[0])
 
