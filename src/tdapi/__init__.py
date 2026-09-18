@@ -1,6 +1,7 @@
 """
 TeamDynamix API.
 """
+
 import email.utils
 import json
 import logging
@@ -52,15 +53,15 @@ RETRYABLE_EXCEPTIONS = (
 )
 
 RATE_LIMIT_HEADERS = (
-    'X-RateLimit-Limit',
-    'X-RateLimit-Remaining',
-    'X-RateLimit-Reset',
+    "X-RateLimit-Limit",
+    "X-RateLimit-Remaining",
+    "X-RateLimit-Reset",
 )
 
-ALLOWED_METHODS = ('post', 'get', 'delete', 'put', 'patch')
+ALLOWED_METHODS = ("post", "get", "delete", "put", "patch")
 
-PRODUCTION_APP_PATH = 'TDWebApi/api/'
-SANDBOX_APP_PATH = 'SBTDWebApi/api/'
+PRODUCTION_APP_PATH = "TDWebApi/api/"
+SANDBOX_APP_PATH = "SBTDWebApi/api/"
 
 _APP_PATHS = (PRODUCTION_APP_PATH, SANDBOX_APP_PATH)
 
@@ -83,18 +84,18 @@ def _apply_preview(url_root):
     traffic to a production tenant is the failure worth preventing.
     """
     parts = urllib.parse.urlsplit(url_root)
-    host = parts.hostname or ''
+    host = parts.hostname or ""
 
-    if host.endswith('.teamdynamixpreview.com'):
+    if host.endswith(".teamdynamixpreview.com"):
         return url_root
-    if not host.endswith('.teamdynamix.com'):
+    if not host.endswith(".teamdynamix.com"):
         raise TDConfigurationException(
             "preview=True, but {!r} is not a *.teamdynamix.com host, so the "
             "preview hostname cannot be derived from it. Pass the preview "
-            "URL directly as url_root instead.".format(url_root))
+            "URL directly as url_root instead.".format(url_root)
+        )
 
-    netloc = parts.netloc.replace('.teamdynamix.com',
-                                  '.teamdynamixpreview.com')
+    netloc = parts.netloc.replace(".teamdynamix.com", ".teamdynamixpreview.com")
     return urllib.parse.urlunsplit(parts._replace(netloc=netloc))
 
 
@@ -127,7 +128,7 @@ def resolve_url_root(url_root, preview=False, sandbox=False):
     if preview is True:
         url_root = _apply_preview(url_root)
 
-    normalized = url_root if url_root.endswith('/') else url_root + '/'
+    normalized = url_root if url_root.endswith("/") else url_root + "/"
     lowered = normalized.lower()
 
     for app_path in _APP_PATHS:
@@ -137,8 +138,8 @@ def resolve_url_root(url_root, preview=False, sandbox=False):
             raise TDConfigurationException(
                 "sandbox=True, but url_root {!r} names the production "
                 "application ({}). Pass the sandbox URL, or a bare "
-                "organization URL, instead.".format(url_root,
-                                                    PRODUCTION_APP_PATH))
+                "organization URL, instead.".format(url_root, PRODUCTION_APP_PATH)
+            )
         return normalized
 
     return normalized + (SANDBOX_APP_PATH if sandbox else PRODUCTION_APP_PATH)
@@ -162,20 +163,19 @@ def filename_from_content_disposition(value):
 
     encoded = None
     plain = None
-    for part in value.split(';'):
+    for part in value.split(";"):
         part = part.strip()
-        if part.lower().startswith('filename*='):
-            encoded = part.split('=', 1)[1].strip()
-        elif part.lower().startswith('filename='):
-            plain = part.split('=', 1)[1].strip().strip('"')
+        if part.lower().startswith("filename*="):
+            encoded = part.split("=", 1)[1].strip()
+        elif part.lower().startswith("filename="):
+            plain = part.split("=", 1)[1].strip().strip('"')
 
     if encoded:
         # charset'language'percent-encoded-value
         pieces = encoded.split("'", 2)
         if len(pieces) == 3:
             charset, _language, raw = pieces
-            return urllib.parse.unquote(raw, encoding=charset or 'utf-8',
-                                        errors='replace')
+            return urllib.parse.unquote(raw, encoding=charset or "utf-8", errors="replace")
         return urllib.parse.unquote(encoded)
 
     return plain or None
@@ -252,16 +252,14 @@ class RateLimiter:
         if self.min_interval <= 0:
             return
         with self._lock:
-            self._next_allowed = max(self._next_allowed,
-                                     time.monotonic() + self.min_interval)
+            self._next_allowed = max(self._next_allowed, time.monotonic() + self.min_interval)
 
     def pause(self, seconds):
         """Hold every thread off for at least `seconds` from now."""
         if seconds is None or seconds <= 0:
             return
         with self._lock:
-            self._next_allowed = max(self._next_allowed,
-                                     time.monotonic() + seconds)
+            self._next_allowed = max(self._next_allowed, time.monotonic() + seconds)
 
 
 def make_session(cache_expire_after=None):
@@ -304,6 +302,7 @@ class TDException(Exception):
 
     Returned for non-200 HTTP response codes.
     """
+
     pass
 
 
@@ -311,6 +310,7 @@ class TDAuthorizationException(Exception):
     """
     Returned for 401 unauthorized HTTP response code.
     """
+
     pass
 
 
@@ -319,6 +319,7 @@ class TDConfigurationException(TDException):
     Raised for a connection that cannot be built as configured, before
     any request is attempted.
     """
+
     pass
 
 
@@ -341,16 +342,19 @@ class TDConnection(object):
                                   data={'search': 'Test'})
 
     """
-    def __init__(self,
-                 BEID,
-                 WebServicesKey,
-                 sandbox=False,
-                 preview=False,
-                 url_root=None,
-                 request_delay=1,
-                 cache_expire_after=None,
-                 timeout=DEFAULT_TIMEOUT,
-                 max_attempts=DEFAULT_MAX_ATTEMPTS):
+
+    def __init__(
+        self,
+        BEID,
+        WebServicesKey,
+        sandbox=False,
+        preview=False,
+        url_root=None,
+        request_delay=1,
+        cache_expire_after=None,
+        timeout=DEFAULT_TIMEOUT,
+        max_attempts=DEFAULT_MAX_ATTEMPTS,
+    ):
         """
         TODO this only uses the new superuser login option with BEID and
         WebServicesKey.
@@ -371,7 +375,7 @@ class TDConnection(object):
         `max_attempts` bounds the retry budget for 429s, 5xxs and
         connection errors; see `raw_request()`.
         """
-        self.bearer_token = False            # This will be set in login()
+        self.bearer_token = False  # This will be set in login()
         self.BEID = BEID
         self.WebServicesKey = WebServicesKey
         self.session = make_session(cache_expire_after)
@@ -384,9 +388,7 @@ class TDConnection(object):
         # guessed ones. Empty until the tenant sends any.
         self.rate_limit_status = {}
 
-        self._make_url_root(url_root=url_root,
-                            preview=preview,
-                            sandbox=sandbox)
+        self._make_url_root(url_root=url_root, preview=preview, sandbox=sandbox)
         self.login()
 
     def _make_url_root(self, url_root, preview, sandbox):
@@ -395,9 +397,7 @@ class TDConnection(object):
 
         `url_root` is required. See `resolve_url_root()`.
         """
-        self.url_root = resolve_url_root(url_root=url_root,
-                                         preview=preview,
-                                         sandbox=sandbox)
+        self.url_root = resolve_url_root(url_root=url_root, preview=preview, sandbox=sandbox)
 
     def _make_url(self, url_stem):
         """
@@ -406,28 +406,25 @@ class TDConnection(object):
         return urllib.parse.urljoin(self.url_root, url_stem)
 
     def add_authorization_header(self, headers):
-        headers['Authorization'] = 'Bearer {}'.format(self.bearer_token)
+        headers["Authorization"] = "Bearer {}".format(self.bearer_token)
 
     def handle_resp(self, resp):
         if resp.status_code == 401:
-            raise TDAuthorizationException("{} returned 401 status\n{}".format(
-                resp.url, resp.text))
+            raise TDAuthorizationException("{} returned 401 status\n{}".format(resp.url, resp.text))
         elif resp.status_code not in [200, 201]:
-            raise TDException("{} returned non-200 status ({})\n{}".format(
-                resp.url, resp.status_code, resp.text))
+            raise TDException(
+                "{} returned non-200 status ({})\n{}".format(resp.url, resp.status_code, resp.text)
+            )
 
-    def files_request(self, method, url_stem,
-                      files):
+    def files_request(self, method, url_stem, files):
         headers = {}
         self.add_authorization_header(headers)
-        resp = self.session.post(self._make_url(url_stem),
-                                 files=files,
-                                 headers=headers,
-                                 timeout=self.timeout)
+        resp = self.session.post(
+            self._make_url(url_stem), files=files, headers=headers, timeout=self.timeout
+        )
         self.handle_resp(resp)
         return resp
 
-                      
     def note_rate_limit_headers(self, resp):
         """
         Record whatever X-RateLimit-* headers the tenant returned.
@@ -437,12 +434,12 @@ class TDConnection(object):
         Recording what actually arrives lets a caller pace itself
         against the tenant's own numbers.
         """
-        seen = {header: resp.headers[header]
-                for header in RATE_LIMIT_HEADERS
-                if header in resp.headers}
+        seen = {
+            header: resp.headers[header] for header in RATE_LIMIT_HEADERS if header in resp.headers
+        }
         if seen:
             self.rate_limit_status = seen
-            logger.debug('Rate limit headers: %s', seen)
+            logger.debug("Rate limit headers: %s", seen)
         return seen
 
     def retry_wait(self, attempt, resp):
@@ -452,26 +449,32 @@ class TDConnection(object):
         """
         server_wait = None
         if resp is not None:
-            server_wait = parse_retry_after(resp.headers.get('Retry-After'))
+            server_wait = parse_retry_after(resp.headers.get("Retry-After"))
 
         if server_wait is None:
-            ceiling = min(DEFAULT_MAX_RETRY_WAIT,
-                          DEFAULT_BACKOFF_BASE * (2 ** (attempt - 1)))
+            ceiling = min(DEFAULT_MAX_RETRY_WAIT, DEFAULT_BACKOFF_BASE * (2 ** (attempt - 1)))
             # Full jitter: spreads a thundering herd of worker threads
             # that all hit the same 429 instead of re-synchronizing them.
             return random.uniform(0, ceiling)  # noqa: S311 - pacing, not crypto
 
         if server_wait > DEFAULT_MAX_RETRY_WAIT:
-            logger.warning('Server asked for a %.0fs retry delay; capping at %.0fs',
-                           server_wait, DEFAULT_MAX_RETRY_WAIT)
+            logger.warning(
+                "Server asked for a %.0fs retry delay; capping at %.0fs",
+                server_wait,
+                DEFAULT_MAX_RETRY_WAIT,
+            )
             return DEFAULT_MAX_RETRY_WAIT
         return server_wait
 
-    def send(self, method, url_stem,
-             data=None,
-             bearer_required=True,
-             stream=False,
-             content_type='application/json'):
+    def send(
+        self,
+        method,
+        url_stem,
+        data=None,
+        bearer_required=True,
+        stream=False,
+        content_type="application/json",
+    ):
         """
         Send one logical request, pacing and retrying as configured.
 
@@ -500,7 +503,7 @@ class TDConnection(object):
 
         headers = {}
         if content_type is not None:
-            headers['Content-Type'] = content_type
+            headers["Content-Type"] = content_type
 
         if bearer_required:
             self.add_authorization_header(headers)
@@ -508,36 +511,49 @@ class TDConnection(object):
         if data is not None:
             payload = json.dumps(data)
         else:
-            payload = ''
+            payload = ""
 
         url = self._make_url(url_stem)
         resp = None
 
         for attempt in range(1, self.max_attempts + 1):
             self.rate_limiter.wait()
-            logger.debug('%s to %s, data %s (attempt %s/%s)',
-                         method.upper(), url, payload,
-                         attempt, self.max_attempts)
+            logger.debug(
+                "%s to %s, data %s (attempt %s/%s)",
+                method.upper(),
+                url,
+                payload,
+                attempt,
+                self.max_attempts,
+            )
 
             try:
-                resp = self.session.request(method=method,
-                                            url=url,
-                                            data=payload,
-                                            headers=headers,
-                                            timeout=self.timeout,
-                                            stream=stream,
+                resp = self.session.request(
+                    method=method,
+                    url=url,
+                    data=payload,
+                    headers=headers,
+                    timeout=self.timeout,
+                    stream=stream,
                 )
             except RETRYABLE_EXCEPTIONS as exc:
                 self.rate_limiter.record()
                 if attempt == self.max_attempts:
                     raise TDException(
                         "{} {} failed after {} attempts: {}".format(
-                            method.upper(), url, self.max_attempts, exc)
+                            method.upper(), url, self.max_attempts, exc
+                        )
                     ) from exc
                 wait = self.retry_wait(attempt, None)
-                logger.warning('%s %s: %s; retrying in %.1fs (attempt %s/%s)',
-                               method.upper(), url, exc, wait,
-                               attempt, self.max_attempts)
+                logger.warning(
+                    "%s %s: %s; retrying in %.1fs (attempt %s/%s)",
+                    method.upper(),
+                    url,
+                    exc,
+                    wait,
+                    attempt,
+                    self.max_attempts,
+                )
                 time.sleep(wait)
                 continue
 
@@ -552,15 +568,25 @@ class TDConnection(object):
                 break
 
             if attempt == self.max_attempts:
-                logger.error('%s %s still returning %s after %s attempts',
-                             method.upper(), url, resp.status_code,
-                             self.max_attempts)
+                logger.error(
+                    "%s %s still returning %s after %s attempts",
+                    method.upper(),
+                    url,
+                    resp.status_code,
+                    self.max_attempts,
+                )
                 break
 
             wait = self.retry_wait(attempt, resp)
-            logger.warning('%s %s returned %s; retrying in %.1fs (attempt %s/%s)',
-                           method.upper(), url, resp.status_code, wait,
-                           attempt, self.max_attempts)
+            logger.warning(
+                "%s %s returned %s; retrying in %.1fs (attempt %s/%s)",
+                method.upper(),
+                url,
+                resp.status_code,
+                wait,
+                attempt,
+                self.max_attempts,
+            )
             if resp.status_code == 429:
                 # Slow every thread on this connection, not just this one.
                 self.rate_limiter.pause(wait)
@@ -572,9 +598,7 @@ class TDConnection(object):
 
         return resp
 
-    def raw_request(self, method, url_stem,
-                    data=None,
-                    bearer_required=True):
+    def raw_request(self, method, url_stem, data=None, bearer_required=True):
         """
         This method sends a request to TeamDynamix and returns the
         response, whose body is read into memory.
@@ -593,22 +617,17 @@ class TDConnection(object):
             TDException: on any other non-200/201 response, including
                 one still failing after the last retry.
         """
-        resp = self.send(method=method,
-                         url_stem=url_stem,
-                         data=data,
-                         bearer_required=bearer_required)
+        resp = self.send(
+            method=method, url_stem=url_stem, data=data, bearer_required=bearer_required
+        )
 
-        logger.debug('Response code: %s\nResponse: %s',
-                      resp.status_code,
-                      resp.text)
+        logger.debug("Response code: %s\nResponse: %s", resp.status_code, resp.text)
 
         self.handle_resp(resp)
 
         return resp
 
-    def raw_content_request(self, url_stem, fileobj,
-                            method='get',
-                            chunk_size=DEFAULT_CHUNK_SIZE):
+    def raw_content_request(self, url_stem, fileobj, method="get", chunk_size=DEFAULT_CHUNK_SIZE):
         """
         Stream a non-JSON response body into `fileobj`.
 
@@ -633,11 +652,9 @@ class TDConnection(object):
             TDAuthorizationException: on a 401.
             TDException: on any other non-200/201 response.
         """
-        resp = self.send(method=method,
-                         url_stem=url_stem,
-                         bearer_required=True,
-                         stream=True,
-                         content_type=None)
+        resp = self.send(
+            method=method, url_stem=url_stem, bearer_required=True, stream=True, content_type=None
+        )
 
         # Raise before a single byte reaches the caller's file: an error
         # body is HTML or JSON, and writing it would produce a
@@ -654,13 +671,12 @@ class TDConnection(object):
         finally:
             resp.close()
 
-        declared = resp.headers.get('Content-Length')
+        declared = resp.headers.get("Content-Length")
         return {
-            'bytes': written,
-            'content_type': resp.headers.get('Content-Type'),
-            'content_length': int(declared) if declared is not None else None,
-            'filename': filename_from_content_disposition(
-                resp.headers.get('Content-Disposition')),
+            "bytes": written,
+            "content_type": resp.headers.get("Content-Type"),
+            "content_length": int(declared) if declared is not None else None,
+            "filename": filename_from_content_disposition(resp.headers.get("Content-Disposition")),
         }
 
     def request(self, *args, **kwargs):
@@ -701,13 +717,15 @@ class TDConnection(object):
         """
         This posts the login data.
         """
-        resp = self.request(method='post',
-                            url_stem='auth/loginadmin',
-                            data={'BEID': self.BEID,
-                                  'WebServicesKey': self.WebServicesKey,
-                              },
-                            bearer_required=False
-                        )
+        resp = self.request(
+            method="post",
+            url_stem="auth/loginadmin",
+            data={
+                "BEID": self.BEID,
+                "WebServicesKey": self.WebServicesKey,
+            },
+            bearer_required=False,
+        )
         self.bearer_token = resp.text
 
     def json_request_roller(self, *args, **kwargs):
@@ -725,11 +743,14 @@ class TDConnection(object):
     def new_ci(self, type_id, name):
         # FIXME this needs to be redone probably as
         # TDConfigurationItem({new_struct}).save()
-        td_struct=self.json_request(method='post',
-                                    url_stem='cmdb',
-                                    data={'TypeID': type_id,
-                                        'Name': name,
-                                      })
+        td_struct = self.json_request(
+            method="post",
+            url_stem="cmdb",
+            data={
+                "TypeID": type_id,
+                "Name": name,
+            },
+        )
         return tdapi.cmdb.TDConfigurationItem(td_struct=td_struct)
 
 
@@ -737,16 +758,19 @@ class TDUserConnection(TDConnection):
     """
     Log in as a user rather than as admin.
     """
-    def __init__(self,
-                 username,
-                 password,
-                 sandbox=False,
-                 preview=False,
-                 url_root=None,
-                 request_delay=1,
-                 cache_expire_after=None,
-                 timeout=DEFAULT_TIMEOUT,
-                 max_attempts=DEFAULT_MAX_ATTEMPTS):
+
+    def __init__(
+        self,
+        username,
+        password,
+        sandbox=False,
+        preview=False,
+        url_root=None,
+        request_delay=1,
+        cache_expire_after=None,
+        timeout=DEFAULT_TIMEOUT,
+        max_attempts=DEFAULT_MAX_ATTEMPTS,
+    ):
         self.bearer_token = False
         self.username = username
         self.password = password
@@ -760,25 +784,26 @@ class TDUserConnection(TDConnection):
         # guessed ones. Empty until the tenant sends any.
         self.rate_limit_status = {}
 
-        self._make_url_root(url_root=url_root,
-                            preview=preview,
-                            sandbox=sandbox)
+        self._make_url_root(url_root=url_root, preview=preview, sandbox=sandbox)
         self.login()
 
     def login(self):
-        resp = self.request(method='post',
-                            url_stem='auth/login',
-                            data={'UserName': self.username,
-                                  'Password': self.password,
-                              },
-                            bearer_required=False
-                        )
+        resp = self.request(
+            method="post",
+            url_stem="auth/login",
+            data={
+                "UserName": self.username,
+                "Password": self.password,
+            },
+            bearer_required=False,
+        )
         self.bearer_token = resp.text
 
-    
+
 def set_connection(conn):
     # TODO: this probably shouldn't be a global variable.
     tdapi.TD_CONNECTION = conn
+
 
 def get_connection():
     return tdapi.TD_CONNECTION

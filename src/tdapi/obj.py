@@ -1,6 +1,7 @@
 """
 Foundational class for TD objects.
 """
+
 import tdapi
 
 
@@ -21,6 +22,7 @@ class TDObjectManager(object):
     Modeled on Django's Model Manager. This is the parent class for
     TD search stuff.
     """
+
     object_class = None
 
     def json_request(self, *args, **kwargs):
@@ -39,6 +41,7 @@ class TDObject(object):
     If you need single_query_get functionality, define
     `_ensure_single_query`
     """
+
     objects = None
 
     def __init__(self, td_struct):

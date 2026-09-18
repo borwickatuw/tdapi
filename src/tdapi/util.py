@@ -8,6 +8,7 @@ class CachedRecordManager(object):
       cached_records = CachedRecordsManager(TDPerson.objects.all())
       users = cached_records.find({'AuthenticationUserName': 'x'})
     """
+
     def __init__(self, records):
         self.records = records
 
@@ -20,7 +21,7 @@ class CachedRecordManager(object):
 
     def _matches(self, record, match_dict, match_all):
         assert len(match_dict) > 0
-        for (match_key, match_val) in match_dict.items():
+        for match_key, match_val in match_dict.items():
             if record.get(match_key) == match_val:
                 if match_all is False:
                     return True
@@ -41,6 +42,7 @@ class KeyMatcher(object):
     example, you may want to match on key A--and if there's a match,
     you're done. Then if there's no match on key A, try key B. &c.
     """
+
     def __init__(self, keys_to_track):
         """
         keys_to_track -- order is important! Matches will be tested in
@@ -66,7 +68,7 @@ class KeyMatcher(object):
         for key_to_track in self.keys_to_track:
             if key_to_track in match_dict:
                 match_val = match_dict[key_to_track]
-                if match_val is None or match_val == '':
+                if match_val is None or match_val == "":
                     pass
                 else:
                     self.tracker[key_to_track][match_val] = obj
@@ -95,6 +97,7 @@ class KeyMatchingCachedRecordManager(CachedRecordManager):
     """
     Define `KEYS_TO_TRACK` property and an _add_matches() method.
     """
+
     def __init__(self, *args, **kwargs):
         super(KeyMatchingCachedRecordManager, self).__init__(*args, **kwargs)
         self.key_matcher = KeyMatcher(self.KEYS_TO_TRACK)
@@ -105,10 +108,10 @@ class KeyMatchingCachedRecordManager(CachedRecordManager):
         Utility function to populate key_matcher from self.records.
         """
         for record in self.records:
-            match_dict={key_to_track: record.get(key_to_track)
-                         for key_to_track in self.key_matcher.keys()}
-            self.key_matcher.add(obj=record,
-                                 match_dict=match_dict)
+            match_dict = {
+                key_to_track: record.get(key_to_track) for key_to_track in self.key_matcher.keys()
+            }
+            self.key_matcher.add(obj=record, match_dict=match_dict)
 
     def match(self, **match_dict):
         return self.key_matcher.match(match_dict)
