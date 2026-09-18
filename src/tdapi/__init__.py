@@ -1,8 +1,11 @@
 """
 TeamDynamix API.
 """
+import email.utils
 import json
 import logging
+import random
+import threading
 import time
 import urllib.parse
 from importlib.metadata import PackageNotFoundError, version
@@ -24,6 +27,30 @@ TD_CONNECTION = None
 
 
 DEFAULT_TIMEOUT = 60
+
+# Bounded retry budget for 429s, 5xxs and connection errors. A bulk
+# export makes hundreds of thousands of requests; a single transient
+# failure must not end the run, and an unbounded retry must not hide a
+# tenant that is genuinely down.
+DEFAULT_MAX_ATTEMPTS = 5
+DEFAULT_BACKOFF_BASE = 1.0
+DEFAULT_MAX_RETRY_WAIT = 300.0
+
+RETRYABLE_STATUS_CODES = frozenset({429, 500, 502, 503, 504})
+
+# requests raises these for a connection reset, DNS failure or a read
+# that exceeded `timeout` -- all worth one more try.
+RETRYABLE_EXCEPTIONS = (
+    requests.exceptions.ConnectionError,
+    requests.exceptions.Timeout,
+    requests.exceptions.ChunkedEncodingError,
+)
+
+RATE_LIMIT_HEADERS = (
+    'X-RateLimit-Limit',
+    'X-RateLimit-Remaining',
+    'X-RateLimit-Reset',
+)
 
 ALLOWED_METHODS = ('post', 'get', 'delete', 'put', 'patch')
 
@@ -112,6 +139,89 @@ def resolve_url_root(url_root, preview=False, sandbox=False):
     return normalized + (SANDBOX_APP_PATH if sandbox else PRODUCTION_APP_PATH)
 
 
+def parse_retry_after(value, now=None):
+    """
+    Parse a Retry-After (or X-RateLimit-Reset) header into seconds.
+
+    The header is either delta-seconds or an HTTP date; TeamDynamix has
+    been seen to use both spellings across endpoints, and the value is
+    not worth a failed run either way.
+
+    Returns:
+        A non-negative float number of seconds, or None if the value is
+        absent or unparseable. None means "no server-supplied delay",
+        never "no delay needed" -- the caller falls back to its own
+        backoff.
+    """
+    if value is None:
+        return None
+
+    value = value.strip()
+    if not value:
+        return None
+
+    try:
+        return max(0.0, float(value))
+    except ValueError:
+        pass
+
+    try:
+        parsed = email.utils.parsedate_to_datetime(value)
+    except (TypeError, ValueError):
+        return None
+    if parsed is None:
+        return None
+
+    if now is None:
+        now = time.time()
+    if parsed.tzinfo is None:
+        # An HTTP date without a zone is GMT by definition (RFC 9110).
+        return max(0.0, parsed.timestamp() - now)
+    return max(0.0, parsed.timestamp() - now)
+
+
+class RateLimiter:
+    """
+    Minimum-interval pacer shared by every thread on one connection.
+
+    Unlike an unconditional `time.sleep()` after each request, this only
+    sleeps when the next request would otherwise arrive too soon -- so
+    work done between requests (parsing, writing a file to disk) counts
+    against the interval instead of being added to it.
+
+    `pause()` lets a 429 on one thread slow every thread down, which is
+    the behaviour a shared tenant rate limit actually calls for.
+    """
+
+    def __init__(self, min_interval):
+        self.min_interval = max(0.0, float(min_interval or 0.0))
+        self._lock = threading.Lock()
+        self._next_allowed = 0.0
+
+    def wait(self):
+        """Block until this thread's turn, then claim it."""
+        with self._lock:
+            sleep_for = self._next_allowed - time.monotonic()
+        if sleep_for > 0:
+            time.sleep(sleep_for)
+
+    def record(self):
+        """Note that a real (non-cached) request just went out."""
+        if self.min_interval <= 0:
+            return
+        with self._lock:
+            self._next_allowed = max(self._next_allowed,
+                                     time.monotonic() + self.min_interval)
+
+    def pause(self, seconds):
+        """Hold every thread off for at least `seconds` from now."""
+        if seconds is None or seconds <= 0:
+            return
+        with self._lock:
+            self._next_allowed = max(self._next_allowed,
+                                     time.monotonic() + seconds)
+
+
 def make_session(cache_expire_after=None):
     """
     Build the `requests` session a connection will use.
@@ -197,13 +307,16 @@ class TDConnection(object):
                  url_root=None,
                  request_delay=1,
                  cache_expire_after=None,
-                 timeout=DEFAULT_TIMEOUT):
+                 timeout=DEFAULT_TIMEOUT,
+                 max_attempts=DEFAULT_MAX_ATTEMPTS):
         """
         TODO this only uses the new superuser login option with BEID and
         WebServicesKey.
 
-        The `request_delay` attribute is the amount of time to sleep
-        after each request.
+        The `request_delay` attribute is the minimum number of seconds
+        between requests. It is enforced *before* each request rather
+        than slept away after one, so time spent between requests
+        counts against it.
 
         `cache_expire_after` opts this connection into response
         caching; see `make_session()`.
@@ -212,6 +325,9 @@ class TDConnection(object):
         stalled connection hangs the caller forever, which for a
         long-running batch job means a run that never finishes and
         never fails.
+
+        `max_attempts` bounds the retry budget for 429s, 5xxs and
+        connection errors; see `raw_request()`.
         """
         self.bearer_token = False            # This will be set in login()
         self.BEID = BEID
@@ -219,6 +335,12 @@ class TDConnection(object):
         self.session = make_session(cache_expire_after)
         self.request_delay = request_delay
         self.timeout = timeout
+        self.max_attempts = max_attempts
+        self.rate_limiter = RateLimiter(request_delay)
+        # Most recent X-RateLimit-* values the tenant reported, so a
+        # caller can pace itself against real numbers rather than
+        # guessed ones. Empty until the tenant sends any.
+        self.rate_limit_status = {}
 
         self._make_url_root(url_root=url_root,
                             preview=preview,
@@ -264,6 +386,45 @@ class TDConnection(object):
         return resp
 
                       
+    def note_rate_limit_headers(self, resp):
+        """
+        Record whatever X-RateLimit-* headers the tenant returned.
+
+        The TeamDynamix docs went offline with api.teamdynamix.com, so
+        which of these a given tenant sends is not knowable in advance.
+        Recording what actually arrives lets a caller pace itself
+        against the tenant's own numbers.
+        """
+        seen = {header: resp.headers[header]
+                for header in RATE_LIMIT_HEADERS
+                if header in resp.headers}
+        if seen:
+            self.rate_limit_status = seen
+            logger.debug('Rate limit headers: %s', seen)
+        return seen
+
+    def retry_wait(self, attempt, resp):
+        """
+        Seconds to wait before retrying: the server's number if it gave
+        one, otherwise exponential backoff with full jitter.
+        """
+        server_wait = None
+        if resp is not None:
+            server_wait = parse_retry_after(resp.headers.get('Retry-After'))
+
+        if server_wait is None:
+            ceiling = min(DEFAULT_MAX_RETRY_WAIT,
+                          DEFAULT_BACKOFF_BASE * (2 ** (attempt - 1)))
+            # Full jitter: spreads a thundering herd of worker threads
+            # that all hit the same 429 instead of re-synchronizing them.
+            return random.uniform(0, ceiling)  # noqa: S311 - pacing, not crypto
+
+        if server_wait > DEFAULT_MAX_RETRY_WAIT:
+            logger.warning('Server asked for a %.0fs retry delay; capping at %.0fs',
+                           server_wait, DEFAULT_MAX_RETRY_WAIT)
+            return DEFAULT_MAX_RETRY_WAIT
+        return server_wait
+
     def raw_request(self, method, url_stem,
                     data=None,
                     bearer_required=True):
@@ -274,6 +435,23 @@ class TDConnection(object):
 
         The `bearer_required` option is only set to false for logging
         in.
+
+        Retries 429s, 5xxs and connection errors up to `max_attempts`
+        times, honouring Retry-After when the tenant sends it and
+        backing off exponentially with jitter when it does not. A 429
+        pauses the shared rate limiter, so every thread on this
+        connection slows down rather than only the one that was
+        throttled.
+
+        Returns:
+            The `requests.Response`, which has already passed
+            `handle_resp()`.
+
+        Raises:
+            TDAuthorizationException: on a 401.
+            TDException: on any other non-200/201 response, including
+                one that was still failing after the last attempt, and
+                on a connection error that outlived the retry budget.
         """
         if method not in ALLOWED_METHODS:
             raise TDException("method {} not supported".format(method))
@@ -290,22 +468,63 @@ class TDConnection(object):
             payload = ''
 
         url = self._make_url(url_stem)
-        logger.debug('%s to %s, data %s', method.upper(), url, payload)
+        resp = None
 
-        resp = self.session.request(method=method,
-                                    url=url,
-                                    data=payload,
-                                    headers=headers,
-                                    timeout=self.timeout,
-        )
+        for attempt in range(1, self.max_attempts + 1):
+            self.rate_limiter.wait()
+            logger.debug('%s to %s, data %s (attempt %s/%s)',
+                         method.upper(), url, payload,
+                         attempt, self.max_attempts)
+
+            try:
+                resp = self.session.request(method=method,
+                                            url=url,
+                                            data=payload,
+                                            headers=headers,
+                                            timeout=self.timeout,
+                )
+            except RETRYABLE_EXCEPTIONS as exc:
+                self.rate_limiter.record()
+                if attempt == self.max_attempts:
+                    raise TDException(
+                        "{} {} failed after {} attempts: {}".format(
+                            method.upper(), url, self.max_attempts, exc)
+                    ) from exc
+                wait = self.retry_wait(attempt, None)
+                logger.warning('%s %s: %s; retrying in %.1fs (attempt %s/%s)',
+                               method.upper(), url, exc, wait,
+                               attempt, self.max_attempts)
+                time.sleep(wait)
+                continue
+
+            # A cached response consumed no quota, so it must not push
+            # the next real request further out.
+            if getattr(resp, "from_cache", False) is False:
+                self.rate_limiter.record()
+
+            self.note_rate_limit_headers(resp)
+
+            if resp.status_code not in RETRYABLE_STATUS_CODES:
+                break
+
+            if attempt == self.max_attempts:
+                logger.error('%s %s still returning %s after %s attempts',
+                             method.upper(), url, resp.status_code,
+                             self.max_attempts)
+                break
+
+            wait = self.retry_wait(attempt, resp)
+            logger.warning('%s %s returned %s; retrying in %.1fs (attempt %s/%s)',
+                           method.upper(), url, resp.status_code, wait,
+                           attempt, self.max_attempts)
+            if resp.status_code == 429:
+                # Slow every thread on this connection, not just this one.
+                self.rate_limiter.pause(wait)
+            time.sleep(wait)
 
         logger.debug('Response code: %s\nResponse: %s',
                       resp.status_code,
                       resp.text)
-
-        # if resp was not from cache:
-        if getattr(resp, "from_cache", False) is False:
-            time.sleep(self.request_delay)
 
         self.handle_resp(resp)
 
@@ -378,13 +597,20 @@ class TDUserConnection(TDConnection):
                  url_root=None,
                  request_delay=1,
                  cache_expire_after=None,
-                 timeout=DEFAULT_TIMEOUT):
+                 timeout=DEFAULT_TIMEOUT,
+                 max_attempts=DEFAULT_MAX_ATTEMPTS):
         self.bearer_token = False
         self.username = username
         self.password = password
         self.session = make_session(cache_expire_after)
         self.request_delay = request_delay
         self.timeout = timeout
+        self.max_attempts = max_attempts
+        self.rate_limiter = RateLimiter(request_delay)
+        # Most recent X-RateLimit-* values the tenant reported, so a
+        # caller can pace itself against real numbers rather than
+        # guessed ones. Empty until the tenant sends any.
+        self.rate_limit_status = {}
 
         self._make_url_root(url_root=url_root,
                             preview=preview,
