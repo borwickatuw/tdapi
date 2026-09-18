@@ -8,7 +8,6 @@ import urllib.parse
 from importlib.metadata import PackageNotFoundError, version
 
 import requests
-import requests_cache
 
 import tdapi.asset
 import tdapi.cmdb
@@ -18,12 +17,44 @@ try:
 except PackageNotFoundError:  # pragma: no cover - source tree, not installed
     __version__ = "0.0.0+unknown"
 
-# cache requests:
-requests_cache.install_cache(expire_after=60*15)
 logger = logging.getLogger(__name__)
 
 
 TD_CONNECTION = None
+
+
+def make_session(cache_expire_after=None):
+    """
+    Build the `requests` session a connection will use.
+
+    By default this is a plain `requests.Session` with no caching at
+    all. Pass `cache_expire_after` (seconds) to get a
+    `requests_cache.CachedSession` instead; that requires the optional
+    `cache` extra (`pip install tdapi[cache]`).
+
+    Caching is opt-in, and scoped to this session rather than installed
+    globally, for two reasons:
+
+    * `requests_cache.install_cache()` monkey-patches `requests` for the
+      whole process, so importing this library used to silently change
+      the behaviour of every other HTTP client in the program.
+    * A caching session is actively wrong for bulk reads: an export that
+      walks every ticket never revisits a URL, so the cache only costs
+      disk, and a cached *attachment download* writes the binary into
+      the cache database as well as to its destination.
+    """
+    if cache_expire_after is None:
+        return requests.Session()
+
+    try:
+        import requests_cache
+    except ImportError as exc:  # pragma: no cover - depends on install extras
+        raise TDException(
+            "cache_expire_after was set but requests-cache is not installed; "
+            "install the optional extra with: pip install tdapi[cache]"
+        ) from exc
+
+    return requests_cache.CachedSession(expire_after=cache_expire_after)
 
 
 class TDException(Exception):
@@ -67,18 +98,22 @@ class TDConnection(object):
                  sandbox=False,
                  preview=False,
                  url_root=None,
-                 request_delay=1):
+                 request_delay=1,
+                 cache_expire_after=None):
         """
         TODO this only uses the new superuser login option with BEID and
         WebServicesKey.
 
         The `request_delay` attribute is the amount of time to sleep
         after each request.
+
+        `cache_expire_after` opts this connection into response
+        caching; see `make_session()`.
         """
         self.bearer_token = False            # This will be set in login()
         self.BEID = BEID
         self.WebServicesKey = WebServicesKey
-        self.session = requests.Session()
+        self.session = make_session(cache_expire_after)
         self.request_delay = request_delay
 
         self._make_url_root(url_root=url_root,
@@ -199,7 +234,7 @@ class TDConnection(object):
                       resp.text)
 
         # if resp was not from cache:
-        if resp.from_cache is False:
+        if getattr(resp, "from_cache", False) is False:
             time.sleep(self.request_delay)
 
         self.handle_resp(resp)
@@ -271,11 +306,12 @@ class TDUserConnection(TDConnection):
                  sandbox=False,
                  preview=False,
                  url_root=None,
-                 request_delay=1):
+                 request_delay=1,
+                 cache_expire_after=None):
         self.bearer_token = False
         self.username = username
         self.password = password
-        self.session = requests.Session()
+        self.session = make_session(cache_expire_after)
         self.request_delay = request_delay
 
         self._make_url_root(url_root=url_root,
